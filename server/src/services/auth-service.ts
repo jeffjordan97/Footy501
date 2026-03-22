@@ -4,13 +4,14 @@ import { users } from '../db/schema/index.js';
 import { eq } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
 
-const JWT_SECRET = process.env.JWT_SECRET;
-if (!JWT_SECRET) {
-  throw new Error('JWT_SECRET environment variable is required');
+function getJwtSecret(): string {
+  const secret = process.env.JWT_SECRET;
+  if (!secret) throw new Error('JWT_SECRET environment variable is required');
+  if (secret.length < 32) throw new Error('JWT_SECRET must be at least 32 characters');
+  return secret;
 }
-if (JWT_SECRET.length < 32) {
-  throw new Error('JWT_SECRET must be at least 32 characters');
-}
+
+const JWT_SECRET: string = getJwtSecret();
 const TOKEN_EXPIRY = '7d';
 
 export interface AuthUser {
