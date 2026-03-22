@@ -1,0 +1,31 @@
+# Dependencies
+node_modules
+
+# Build output
+dist
+
+# Environment variables
+.env
+.env.local
+.env.production
+
+# IDE
+.vscode/
+.idea/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Claude Code (local settings are user-specific)
+.claude/settings.local.json
+
+# Logs
+*.log
+
+# Coverage
+coverage
+
+# Python
+__pycache__
+*.pyc
