@@ -149,6 +149,8 @@ function buildStatExpression(statType?: string) {
       return sql<number>`sum(${playerStats.goals})`;
     case 'APPEARANCES_AND_GOALS':
       return sql<number>`sum(${playerStats.appearances} + ${playerStats.goals})`;
+    case 'APPEARANCES_MINUS_GOALS':
+      return sql<number>`sum(${playerStats.appearances} - ${playerStats.goals})`;
     case 'APPEARANCES_AND_CLEAN_SHEETS':
       return sql<number>`sum(${playerStats.appearances} + ${playerStats.cleanSheets})`;
     case 'APPEARANCES':

@@ -1,18 +1,36 @@
 <script setup lang="ts">
 import { ref, watch, onUnmounted } from 'vue';
 import AppButton from '@/components/ui/AppButton.vue';
+import ShareableResult from '@/components/game/ShareableResult.vue';
 
-const props = defineProps<{
-  visible: boolean;
-  winnerName: string;
-  finalScore: number;
-  isMatchWin: boolean;
-}>();
+const props = withDefaults(
+  defineProps<{
+    visible: boolean;
+    winnerName: string;
+    finalScore: number;
+    isMatchWin: boolean;
+    categoryName?: string;
+    turnsTaken?: number;
+    opponentName?: string;
+    opponentScore?: number;
+    footballersNamed?: string[];
+    isDaily?: boolean;
+    date?: string;
+  }>(),
+  {
+    categoryName: '',
+    turnsTaken: 0,
+    footballersNamed: () => [],
+    isDaily: false,
+  },
+);
 
 defineEmits<{
   continue: [];
   rematch: [];
 }>();
+
+const showShareCard = ref(false);
 
 // Particle confetti system (reduced to 15 for minimalism)
 interface Particle {
@@ -114,12 +132,42 @@ onUnmounted(() => {
             Next Leg
           </AppButton>
           <AppButton
+            variant="ghost"
+            size="sm"
+            @click="showShareCard = !showShareCard"
+          >
+            {{ showShareCard ? 'Hide' : 'Share Result' }}
+          </AppButton>
+          <AppButton
             :variant="isMatchWin ? 'primary' : 'secondary'"
             @click="$emit('rematch')"
           >
             {{ isMatchWin ? 'Rematch' : 'Back to Menu' }}
           </AppButton>
         </div>
+
+        <!-- Shareable result card -->
+        <Transition
+          enter-active-class="transition-all duration-200 ease-[var(--ease-out)]"
+          enter-from-class="opacity-0 scale-95"
+          enter-to-class="opacity-100 scale-100"
+          leave-active-class="transition-all duration-150 ease-[var(--ease-in)]"
+          leave-from-class="opacity-100 scale-100"
+          leave-to-class="opacity-0 scale-95"
+        >
+          <ShareableResult
+            v-if="showShareCard && categoryName"
+            :category-name="categoryName"
+            :final-score="finalScore"
+            :turns-taken="turnsTaken"
+            :is-winner="finalScore === 0"
+            :opponent-name="opponentName"
+            :opponent-score="opponentScore"
+            :footballers-named="footballersNamed"
+            :is-daily="isDaily"
+            :date="date"
+          />
+        </Transition>
       </div>
     </div>
   </Transition>

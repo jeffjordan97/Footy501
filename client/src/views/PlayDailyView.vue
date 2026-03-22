@@ -6,6 +6,7 @@ import AppContainer from '@/components/layout/AppContainer.vue';
 import AppCard from '@/components/ui/AppCard.vue';
 import AppButton from '@/components/ui/AppButton.vue';
 import AppBadge from '@/components/ui/AppBadge.vue';
+import ShareableResult from '@/components/game/ShareableResult.vue';
 import DailyCountdown from '@/components/daily/DailyCountdown.vue';
 import DailyLeaderboard from '@/components/daily/DailyLeaderboard.vue';
 import type { LeaderboardEntry } from '@/components/daily/DailyLeaderboard.vue';
@@ -29,6 +30,7 @@ const todaysChallenge = ref<DailyChallenge | null>(null);
 const hasPlayed = ref(false);
 const personalBest = ref<number | null>(null);
 const personalTurns = ref<number | null>(null);
+const personalFootballers = ref<string[]>([]);
 const leaderboard = ref<readonly LeaderboardEntry[]>([]);
 
 function todayDateString(): string {
@@ -43,10 +45,11 @@ function loadLocalResult(): void {
   const stored = localStorage.getItem(dailyStorageKey());
   if (stored) {
     try {
-      const parsed = JSON.parse(stored) as { score: number; turns: number };
+      const parsed = JSON.parse(stored) as { score: number; turns: number; footballers?: string[] };
       hasPlayed.value = true;
       personalBest.value = parsed.score;
       personalTurns.value = parsed.turns;
+      personalFootballers.value = parsed.footballers ?? [];
     } catch {
       // Corrupted entry -- ignore
     }
@@ -115,27 +118,6 @@ const startDaily = async () => {
   }
 };
 
-const shareFeedback = ref<string | null>(null);
-
-const shareResult = async () => {
-  const categoryName = todaysChallenge.value?.categoryName ?? 'Unknown Category';
-  const score = personalBest.value ?? '---';
-  const turns = personalTurns.value ?? '---';
-  const text = `Footy 501 Daily Challenge\n${categoryName}\nScore: ${score} in ${turns} turns\n\nPlay at footy501.com`;
-
-  try {
-    if (navigator.share) {
-      await navigator.share({ text });
-    } else {
-      await navigator.clipboard.writeText(text);
-      shareFeedback.value = 'Copied to clipboard!';
-      setTimeout(() => { shareFeedback.value = null; }, 2000);
-    }
-  } catch {
-    shareFeedback.value = 'Could not share. Try copying manually.';
-    setTimeout(() => { shareFeedback.value = null; }, 3000);
-  }
-};
 </script>
 
 <template>
@@ -185,21 +167,15 @@ const shareResult = async () => {
           </AppButton>
         </template>
         <template v-else>
-          <div class="flex flex-col items-center gap-2">
-            <p class="text-text-muted text-sm">Your score</p>
-            <span class="font-mono text-3xl font-bold text-warning tabular-nums">
-              {{ personalBest ?? '---' }}
-            </span>
-            <p v-if="personalTurns !== null" class="text-text-muted text-xs">
-              in {{ personalTurns }} turns
-            </p>
-            <AppButton variant="ghost" size="sm" @click="shareResult">
-              Share Result
-            </AppButton>
-            <span v-if="shareFeedback" class="text-xs text-text-muted" role="status">
-              {{ shareFeedback }}
-            </span>
-          </div>
+          <ShareableResult
+            :category-name="todaysChallenge?.categoryName ?? 'Unknown Category'"
+            :final-score="personalBest ?? 0"
+            :turns-taken="personalTurns ?? 0"
+            :is-winner="personalBest === 0"
+            :footballers-named="personalFootballers"
+            :is-daily="true"
+            :date="todayDateString()"
+          />
         </template>
       </AppCard>
 

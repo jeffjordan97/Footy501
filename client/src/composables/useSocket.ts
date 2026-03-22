@@ -2,17 +2,39 @@ import { ref, onMounted, onUnmounted } from 'vue';
 import { connectSocket, disconnectSocket, getSocket, type TypedSocket } from '@/lib/socket';
 import type { ServerToClientEvents, RoomConfig, RoomDetail, MatchState } from '@/types/socket-events';
 
-const socket = getSocket();
-
 export function useSocket() {
   const isConnected = ref(false);
 
+  // Always resolve the current socket instance (may change after reconnect with new auth)
+  const s = () => getSocket();
+
   const updateConnectionStatus = () => {
-    isConnected.value = socket.connected;
+    isConnected.value = s().connected;
   };
 
+  const bindConnectionListeners = (socket: TypedSocket) => {
+    socket.on('connect', updateConnectionStatus);
+    socket.on('disconnect', updateConnectionStatus);
+  };
+
+  const unbindConnectionListeners = (socket: TypedSocket) => {
+    socket.off('connect', updateConnectionStatus);
+    socket.off('disconnect', updateConnectionStatus);
+  };
+
+  // Track the socket instance we've bound listeners to so we can clean up
+  let boundSocket: TypedSocket | null = null;
+
   const connect = (authToken?: string) => {
+    // Unbind from the old socket if it's being replaced
+    if (boundSocket) {
+      unbindConnectionListeners(boundSocket);
+    }
     connectSocket(authToken);
+    // Bind to the (potentially new) socket
+    boundSocket = s();
+    bindConnectionListeners(boundSocket);
+    updateConnectionStatus();
   };
 
   const disconnect = () => {
@@ -27,12 +49,12 @@ export function useSocket() {
   const listeners: Array<{ event: string; handler: (...args: unknown[]) => void }> = [];
 
   const on = <E extends EventName>(event: E, handler: EventHandler<E>) => {
-    socket.on(event, handler as never);
+    s().on(event, handler as never);
     listeners.push({ event, handler: handler as (...args: unknown[]) => void });
   };
 
   const off = <E extends EventName>(event: E, handler: EventHandler<E>) => {
-    socket.off(event, handler as never);
+    s().off(event, handler as never);
   };
 
   // --- Game-specific emitters ---
@@ -43,7 +65,7 @@ export function useSocket() {
     footballerName: string,
   ): Promise<{ success: boolean; error?: string }> {
     return new Promise((resolve) => {
-      socket.emit(
+      s().emit(
         'game:submit-answer',
         { gameId, footballerId, footballerName },
         (result) => resolve(result),
@@ -55,7 +77,7 @@ export function useSocket() {
     gameId: string,
   ): Promise<{ success: boolean; error?: string }> {
     return new Promise((resolve) => {
-      socket.emit(
+      s().emit(
         'game:timeout',
         { gameId },
         (result) => resolve(result),
@@ -73,7 +95,7 @@ export function useSocket() {
     error?: string;
   }> {
     return new Promise((resolve) => {
-      socket.emit('game:reconnect', (result) => resolve(result));
+      s().emit('game:reconnect', (result) => resolve(result));
     });
   }
 
@@ -94,7 +116,7 @@ export function useSocket() {
     config: RoomConfig,
   ): Promise<{ success: boolean; roomCode?: string; room?: RoomDetail; error?: string }> {
     return new Promise((resolve) => {
-      socket.emit('room:create', { playerName, config }, resolve);
+      s().emit('room:create', { playerName, config }, resolve);
     });
   }
 
@@ -103,12 +125,12 @@ export function useSocket() {
     playerName: string,
   ): Promise<{ success: boolean; room?: RoomDetail; gameId?: string; error?: string }> {
     return new Promise((resolve) => {
-      socket.emit('room:join', { code, playerName }, resolve);
+      s().emit('room:join', { code, playerName }, resolve);
     });
   }
 
   function leaveRoom(code: string): void {
-    socket.emit('room:leave', { code });
+    s().emit('room:leave', { code });
   }
 
   // --- Matchmaking emitters ---
@@ -118,13 +140,13 @@ export function useSocket() {
     config: RoomConfig,
   ): Promise<{ success: boolean; queued?: boolean }> {
     return new Promise((resolve) => {
-      socket.emit('matchmaking:join', { playerName, config }, resolve);
+      s().emit('matchmaking:join', { playerName, config }, resolve);
     });
   }
 
   function leaveMatchmaking(): Promise<{ success: boolean }> {
     return new Promise((resolve) => {
-      socket.emit('matchmaking:leave', resolve);
+      s().emit('matchmaking:leave', resolve);
     });
   }
 
@@ -162,22 +184,24 @@ export function useSocket() {
   // --- Lifecycle ---
 
   onMounted(() => {
-    socket.on('connect', updateConnectionStatus);
-    socket.on('disconnect', updateConnectionStatus);
+    boundSocket = s();
+    bindConnectionListeners(boundSocket);
     updateConnectionStatus();
   });
 
   onUnmounted(() => {
+    const current = s();
     for (const { event, handler } of listeners) {
-      socket.off(event as never, handler as never);
+      current.off(event as never, handler as never);
     }
     listeners.length = 0;
-    socket.off('connect', updateConnectionStatus);
-    socket.off('disconnect', updateConnectionStatus);
+    if (boundSocket) {
+      unbindConnectionListeners(boundSocket);
+      boundSocket = null;
+    }
   });
 
   return {
-    socket: socket as TypedSocket,
     isConnected,
     connect,
     disconnect,

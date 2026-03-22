@@ -4,6 +4,9 @@ export default defineConfig({
   test: {
     globals: true,
     environment: "node",
+    env: {
+      JWT_SECRET: "test-secret-at-least-32-characters-long-for-testing",
+    },
     coverage: {
       provider: "v8",
       reporter: ["text", "lcov"],

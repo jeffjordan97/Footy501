@@ -11,6 +11,7 @@ const statLabel = (type: string) => {
     case 'APPEARANCES': return 'Appearances';
     case 'GOALS': return 'Goals';
     case 'APPEARANCES_AND_GOALS': return 'Apps + Goals';
+    case 'APPEARANCES_MINUS_GOALS': return 'Apps - Goals';
     case 'APPEARANCES_AND_CLEAN_SHEETS': return 'Apps + Clean Sheets';
     case 'INTERNATIONAL_APPEARANCES': return 'Int\'l Appearances';
     default: return type;

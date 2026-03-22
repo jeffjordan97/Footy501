@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue';
+import { useAnimatedNumber } from '@/composables/useAnimatedNumber';
 
 const props = defineProps<{
   playerName: string;
@@ -9,6 +10,8 @@ const props = defineProps<{
   legWins: number;
   targetScore: number;
 }>();
+
+const displayedScore = useAnimatedNumber(() => props.score, 600);
 
 const progress = computed(() =>
   Math.max(0, ((props.targetScore - props.score) / props.targetScore) * 100),
@@ -43,7 +46,7 @@ const isPlayer1 = computed(() => props.playerNumber === 1);
       :class="isActive ? 'text-text' : 'text-text-muted'"
       :aria-label="`${playerName} score: ${score}`"
     >
-      {{ score }}
+      {{ displayedScore }}
     </span>
 
     <!-- Progress bar with pitch-line markers -->

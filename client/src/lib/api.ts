@@ -87,7 +87,7 @@ export interface DailyLeaderboardEntry {
 }
 
 export async function getDailyChallenge() {
-  return request<{ challenge: DailyChallenge }>('/daily');
+  return request<{ challenge: DailyChallenge }>('/daily/today');
 }
 
 export async function startDailyAttempt(displayName: string, guestId?: string) {

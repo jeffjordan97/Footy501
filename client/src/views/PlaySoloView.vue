@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from 'vue';
+import { ref, computed } from 'vue';
 import { useRouter } from 'vue-router';
 import AppLayout from '@/components/layout/AppLayout.vue';
 import AppContainer from '@/components/layout/AppContainer.vue';
@@ -7,6 +7,8 @@ import AppCard from '@/components/ui/AppCard.vue';
 import AppButton from '@/components/ui/AppButton.vue';
 import GameConfig from '@/components/lobby/GameConfig.vue';
 import AppInput from '@/components/ui/AppInput.vue';
+import PresetChips from '@/components/lobby/PresetChips.vue';
+import type { GamePreset } from '@/components/lobby/PresetChips.vue';
 import { useGameStore } from '@/stores/game';
 
 const router = useRouter();
@@ -14,8 +16,67 @@ const gameStore = useGameStore();
 
 const playerName = ref('');
 const gameConfigRef = ref<InstanceType<typeof GameConfig>>();
+const presetChipsRef = ref<InstanceType<typeof PresetChips>>();
 const creating = ref(false);
 const errorMessage = ref<string | null>(null);
+
+const presets = computed<readonly GamePreset[]>(() => [
+  {
+    id: 'random',
+    label: 'Random',
+    icon: '\uD83C\uDFB2',
+    apply: () => {
+      gameConfigRef.value?.randomiseAll();
+    },
+  },
+  {
+    id: 'speed',
+    label: 'Speed Round',
+    icon: '\u26A1',
+    apply: () => {
+      gameConfigRef.value?.applyPreset({
+        league: 'GB1',
+        team: 'all',
+        statType: 'APPEARANCES',
+        targetScore: '301',
+        matchFormat: '1',
+        timerDuration: 15,
+        enableBogeyNumbers: false,
+      });
+    },
+  },
+  {
+    id: 'classic-pl',
+    label: 'Classic PL',
+    icon: '\uD83C\uDFC6',
+    apply: () => {
+      gameConfigRef.value?.applyPreset({
+        league: 'GB1',
+        team: 'all',
+        statType: 'GOALS',
+        targetScore: '501',
+        matchFormat: '3',
+        timerDuration: 45,
+        enableBogeyNumbers: false,
+      });
+    },
+  },
+  {
+    id: 'world-tour',
+    label: 'World Tour',
+    icon: '\uD83C\uDF0D',
+    apply: () => {
+      gameConfigRef.value?.randomiseAll();
+      gameConfigRef.value?.applyPreset({
+        statType: 'APPEARANCES',
+        targetScore: '501',
+        matchFormat: '1',
+        timerDuration: 45,
+        enableBogeyNumbers: false,
+      });
+    },
+  },
+]);
 
 const startGame = async () => {
   const config = gameConfigRef.value?.config;
@@ -70,6 +131,9 @@ const startGame = async () => {
           placeholder="Enter your name..."
         />
       </AppCard>
+
+      <!-- Quick Presets -->
+      <PresetChips ref="presetChipsRef" :presets="presets" />
 
       <!-- Game Settings -->
       <AppCard class="p-6">

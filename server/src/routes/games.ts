@@ -12,7 +12,7 @@ const router: RouterType = Router();
 const CreateGameSchema = z.object({
   targetScore: z.number().int(),
   matchFormat: z.number().int(),
-  timerDuration: z.number().int().min(5).max(120),
+  timerDuration: z.number().int().min(5).max(600),
   enableBogeyNumbers: z.boolean(),
   categoryId: z.string().min(1),
   categoryName: z.string().min(1),

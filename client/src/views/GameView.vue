@@ -15,6 +15,7 @@ import LegProgress from '@/components/game/LegProgress.vue';
 import StatCategory from '@/components/game/StatCategory.vue';
 import CheckoutCelebration from '@/components/game/CheckoutCelebration.vue';
 import BustNotification from '@/components/game/BustNotification.vue';
+import AnswerReveal from '@/components/game/AnswerReveal.vue';
 import type { PlayerOption } from '@/components/game/PlayerSearch.vue';
 
 const route = useRoute();
@@ -58,6 +59,21 @@ const bustPlayerName = ref('');
 const errorMessage = ref<string | null>(null);
 let errorDismissTimer: ReturnType<typeof setTimeout> | null = null;
 
+// --- Answer Reveal state ---
+
+interface RevealData {
+  readonly footballerName: string;
+  readonly nationality: string | null;
+  readonly position: string | null;
+  readonly statValue: number;
+  readonly oldScore: number;
+  readonly newScore: number;
+  readonly turnResult: string;
+  readonly bustMessage: string | null;
+}
+
+const revealData = ref<RevealData | null>(null);
+
 // --- Computed ---
 
 const availablePlayers = computed<readonly PlayerOption[]>(() =>
@@ -91,11 +107,65 @@ const celebrationFinalScore = computed(() => {
   return lastTurn?.scoreAfter ?? 0;
 });
 
+const footballersNamed = computed(() =>
+  turns.value
+    .filter((t): t is typeof t & { footballerName: string } => t.footballerName != null)
+    .map((t) => t.footballerName),
+);
+
 const isCloseFinish = computed(() => legPhase.value === 'CLOSE_FINISH');
 
 const isPlayerInputDisabled = computed(() =>
   submitting.value || isLegFinished.value || isMatchFinished.value,
 );
+
+// --- Near-miss checkout feedback ---
+
+const activePlayerScore = computed(() =>
+  activePlayerIndex.value === 0 ? player1Score.value : player2Score.value,
+);
+
+const nearMissInfo = computed<{
+  show: boolean;
+  message: string;
+  colorClass: string;
+  pulseClass: string;
+} | null>(() => {
+  const score = activePlayerScore.value;
+
+  if (isLegFinished.value || isMatchFinished.value) return null;
+
+  // "In checkout range" when score is 0-10 (any answer with stat value up to score+10 would checkout)
+  if (score >= 0 && score <= 10) {
+    return {
+      show: true,
+      message: 'IN CHECKOUT RANGE',
+      colorClass: 'text-success',
+      pulseClass: 'animate-checkout-pulse-strong',
+    };
+  }
+
+  // Near miss tiers
+  if (score >= 11 && score <= 15) {
+    return {
+      show: true,
+      message: `Only ${score} away from checkout!`,
+      colorClass: 'text-yellow-400',
+      pulseClass: 'animate-checkout-pulse-moderate',
+    };
+  }
+
+  if (score >= 16 && score <= 20) {
+    return {
+      show: true,
+      message: `Only ${score} away from checkout!`,
+      colorClass: 'text-amber-500/70',
+      pulseClass: 'animate-checkout-pulse-subtle',
+    };
+  }
+
+  return null;
+});
 
 // --- Category info (derived from store's categoryName for display) ---
 // The store exposes categoryName; for StatCategory component we need league/team/statType.
@@ -168,6 +238,14 @@ const handlePlayerSelect = async (player: PlayerOption) => {
   timerRunning.value = false;
   submitting.value = true;
 
+  // Capture the active player's score before submission
+  const oldScore = activePlayerIndex.value === 0
+    ? player1Score.value
+    : player2Score.value;
+
+  // Find full player info for nationality/position
+  const fullPlayer = categoryPlayers.value.find((p) => p.id === player.id);
+
   try {
     await gameStore.submitPlayerAnswer(player.id, player.name);
 
@@ -180,13 +258,39 @@ const handlePlayerSelect = async (player: PlayerOption) => {
           errorMessage.value = null;
         }, 3000);
       }
+
+      // Determine new score from the latest turn entry
+      const latestTurn = turns.value.length > 0
+        ? turns.value[turns.value.length - 1]
+        : null;
+      const newScore = latestTurn?.scoreAfter ?? oldScore;
+
+      // Show the answer reveal overlay
+      revealData.value = {
+        footballerName: player.name,
+        nationality: fullPlayer?.nationality ?? null,
+        position: fullPlayer?.position ?? null,
+        statValue: result.statValue ?? 0,
+        oldScore,
+        newScore,
+        turnResult: result.result,
+        bustMessage: result.bustMessage,
+      };
     }
-  } finally {
+  } catch {
     submitting.value = false;
-    // Restart timer for next turn unless leg/match is over
     if (!isLegFinished.value && !isMatchFinished.value) {
       timerRunning.value = true;
     }
+  }
+};
+
+const handleRevealDismiss = () => {
+  revealData.value = null;
+  submitting.value = false;
+  // Restart timer for next turn unless leg/match is over
+  if (!isLegFinished.value && !isMatchFinished.value) {
+    timerRunning.value = true;
   }
 };
 
@@ -348,6 +452,28 @@ const handleGoHome = () => {
         :target-score="targetScore"
       />
 
+      <!-- Near-miss checkout feedback -->
+      <Transition
+        enter-active-class="transition-all duration-300 ease-[var(--ease-out)]"
+        enter-from-class="opacity-0 scale-95"
+        enter-to-class="opacity-100 scale-100"
+        leave-active-class="transition-all duration-200 ease-[var(--ease-in)]"
+        leave-from-class="opacity-100 scale-100"
+        leave-to-class="opacity-0 scale-95"
+      >
+        <div
+          v-if="nearMissInfo"
+          class="text-center py-1"
+        >
+          <span
+            class="inline-block text-sm font-display font-bold tracking-wide"
+            :class="[nearMissInfo.colorClass, nearMissInfo.pulseClass]"
+          >
+            {{ nearMissInfo.message }}
+          </span>
+        </div>
+      </Transition>
+
       <!-- Turn indicator with timer -->
       <TurnIndicator
         :player-name="activePlayerName"
@@ -432,8 +558,27 @@ const handleGoHome = () => {
         :winner-name="celebrationWinnerName"
         :final-score="celebrationFinalScore"
         :is-match-win="isMatchFinished"
+        :category-name="categoryName"
+        :turns-taken="turns.length"
+        :opponent-name="player2Name"
+        :opponent-score="player2Score"
+        :footballers-named="footballersNamed"
         @continue="handleContinue"
         @rematch="handleRematch"
+      />
+
+      <!-- Answer reveal overlay -->
+      <AnswerReveal
+        v-if="revealData"
+        :footballer-name="revealData.footballerName"
+        :nationality="revealData.nationality"
+        :position="revealData.position"
+        :stat-value="revealData.statValue"
+        :old-score="revealData.oldScore"
+        :new-score="revealData.newScore"
+        :turn-result="revealData.turnResult"
+        :bust-message="revealData.bustMessage"
+        @dismiss="handleRevealDismiss"
       />
 
       <!-- Bust notification -->
@@ -458,3 +603,32 @@ const handleGoHome = () => {
     </AppContainer>
   </AppLayout>
 </template>
+
+<style scoped>
+@keyframes checkout-pulse-strong {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.7; transform: scale(1.05); }
+}
+
+@keyframes checkout-pulse-moderate {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}
+
+@keyframes checkout-pulse-subtle {
+  0%, 100% { opacity: 0.7; }
+  50% { opacity: 0.4; }
+}
+
+.animate-checkout-pulse-strong {
+  animation: checkout-pulse-strong 1.2s ease-in-out infinite;
+}
+
+.animate-checkout-pulse-moderate {
+  animation: checkout-pulse-moderate 1.5s ease-in-out infinite;
+}
+
+.animate-checkout-pulse-subtle {
+  animation: checkout-pulse-subtle 2s ease-in-out infinite;
+}
+</style>
