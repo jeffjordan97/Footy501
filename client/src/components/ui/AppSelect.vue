@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Select } from '@ark-ui/vue/select';
+import { Select, createListCollection } from '@ark-ui/vue/select';
 import { computed } from 'vue';
 
 export interface SelectItem {
@@ -27,12 +27,16 @@ const allItems = computed(() => {
   if (props.groups) return props.groups.flatMap((g) => [...g.items]);
   return [];
 });
+
+const collection = computed(() =>
+  createListCollection({ items: allItems.value }),
+);
 </script>
 
 <template>
   <Select.Root
     v-model="model"
-    :items="allItems"
+    :collection="collection"
     :positioning="{ placement: 'bottom' }"
   >
     <Select.Label v-if="label" class="text-sm font-medium text-text-muted mb-1.5 block">
