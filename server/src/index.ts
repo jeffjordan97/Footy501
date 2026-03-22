@@ -8,23 +8,31 @@ import { registerGameHandlers, registerLobbyHandlers } from './websocket/index.j
 import { cleanupStaleRooms } from './services/room-service.js';
 import { cleanupExpiredConnections } from './services/connection-service.js';
 import { db } from './db/index.js';
+import { sql } from 'drizzle-orm';
+
+const isProduction = process.env.NODE_ENV === 'production';
+const clientUrl = process.env.CLIENT_URL;
+if (isProduction && !clientUrl) {
+  throw new Error('CLIENT_URL environment variable is required in production');
+}
+const origin = clientUrl ?? 'http://localhost:3000';
 
 const app: Express = express();
 const httpServer = createServer(app);
 
 const io = new Server(httpServer, {
   cors: {
-    origin: process.env.CLIENT_URL ?? 'http://localhost:3000',
+    origin,
     methods: ['GET', 'POST'],
   },
 });
 
-app.use(cors({ origin: process.env.CLIENT_URL ?? 'http://localhost:3000' }));
+app.use(cors({ origin }));
 app.use(express.json());
 
 app.get('/api/health', async (_req, res) => {
   try {
-    await db.execute('SELECT 1');
+    await db.execute(sql`SELECT 1`);
     res.json({ status: 'ok', database: 'connected' });
   } catch {
     res.status(503).json({ status: 'degraded', database: 'disconnected' });

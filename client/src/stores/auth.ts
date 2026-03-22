@@ -1,7 +1,6 @@
 import { defineStore } from 'pinia';
 import { ref, computed } from 'vue';
-
-const API_BASE = `${import.meta.env.VITE_API_URL ?? ''}/api`;
+import { API_BASE } from '@/lib/api';
 
 export interface AuthUser {
   readonly id: string;
@@ -50,8 +49,8 @@ export const useAuthStore = defineStore('auth', () => {
       }
       const data = await res.json();
       user.value = data.user;
-    } catch {
-      logout();
+    } catch (err) {
+      console.error('Failed to load user profile:', err);
     } finally {
       loading.value = false;
     }

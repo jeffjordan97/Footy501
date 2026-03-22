@@ -14,7 +14,8 @@
     "db:seed": "tsx src/db/seed/import-players.ts"
   },
   "engines": {
-    "node": ">=22"
+    "node": ">=22",
+    "pnpm": ">=9"
   },
   "dependencies": {
     "cors": "^2.8.6",
