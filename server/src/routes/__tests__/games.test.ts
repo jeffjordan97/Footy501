@@ -177,10 +177,10 @@ describe('POST /api/games', () => {
     expect(res.body).toHaveProperty('error', 'Invalid request body');
   });
 
-  it('returns 400 when timerDuration exceeds the maximum of 120', async () => {
+  it('returns 400 when timerDuration exceeds the maximum of 600', async () => {
     const res = await request(app)
       .post('/api/games')
-      .send({ ...VALID_CREATE_BODY, timerDuration: 121 })
+      .send({ ...VALID_CREATE_BODY, timerDuration: 601 })
       .set('Accept', 'application/json');
 
     expect(res.status).toBe(400);

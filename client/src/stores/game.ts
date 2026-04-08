@@ -92,7 +92,11 @@ export const useGameStore = defineStore('game', () => {
 
   const usedPlayerIds = computed<ReadonlySet<string>>(() => {
     if (!currentLeg.value) return new Set();
-    return new Set(currentLeg.value.usedPlayerIds);
+    const ids = currentLeg.value.usedPlayerIds;
+    // Server returns usedPlayerIds as an object (keyed by player index), not an array
+    if (Array.isArray(ids)) return new Set(ids);
+    if (ids && typeof ids === 'object') return new Set(Object.values(ids).flat());
+    return new Set();
   });
 
   const matchPhase = computed(() => {
@@ -132,6 +136,26 @@ export const useGameStore = defineStore('game', () => {
       gameId.value = id;
       state.value = response.state;
       status.value = response.state.phase === 'FINISHED' ? 'finished' : 'playing';
+
+      // Extract category info and player names from the game config
+      const config = response.state.config as Record<string, unknown>;
+      const statCategory = config.statCategory as Record<string, unknown> | undefined;
+      if (statCategory) {
+        categoryName.value = (statCategory.name as string) ?? '';
+        _categoryLeague.value = (statCategory.league as string) ?? '';
+        _categoryTeamId.value = (statCategory.team as string | undefined) ?? undefined;
+        _categoryStatType.value = (statCategory.statType as string | undefined) ?? undefined;
+      }
+
+      // Extract player names from the first leg
+      const legs = response.state.legs as Array<{ players: Array<{ name: string }> }> | undefined;
+      if (legs?.[0]?.players) {
+        player1Name.value = legs[0].players[0]?.name ?? 'Player 1';
+        player2Name.value = legs[0].players[1]?.name ?? 'Player 2';
+      }
+
+      // Fetch players for the category so the search works
+      await loadCategoryPlayers();
     } catch (err) {
       error.value = err instanceof Error ? err.message : 'Failed to load game';
       throw err;

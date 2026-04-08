@@ -1,7 +1,7 @@
 import jwt from 'jsonwebtoken';
 import { db } from '../db/index.js';
 import { users } from '../db/schema/index.js';
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
 
 function getJwtSecret(): string {
@@ -13,6 +13,14 @@ function getJwtSecret(): string {
 
 const JWT_SECRET: string = getJwtSecret();
 const TOKEN_EXPIRY = '7d';
+
+function signToken(userId: string, displayName: string): string {
+  return jwt.sign(
+    { userId, displayName } satisfies TokenPayload,
+    JWT_SECRET,
+    { expiresIn: TOKEN_EXPIRY },
+  );
+}
 
 export interface AuthUser {
   readonly id: string;
@@ -39,11 +47,7 @@ export async function createGuestUser(displayName: string): Promise<{ token: str
 
   if (!inserted) throw new Error('Failed to create guest user');
 
-  const token = jwt.sign(
-    { userId: inserted.id, displayName: inserted.displayName } satisfies TokenPayload,
-    JWT_SECRET,
-    { expiresIn: TOKEN_EXPIRY },
-  );
+  const token = signToken(inserted.id, inserted.displayName);
 
   return {
     token,
@@ -75,4 +79,96 @@ export async function getUserById(userId: string): Promise<AuthUser | null> {
   const row = results[0];
   if (!row) return null;
   return { id: row.id, displayName: row.displayName, authProvider: row.authProvider ?? 'guest' };
+}
+
+/** Find or create a user by OAuth provider + provider ID. */
+export async function findOrCreateOAuthUser(
+  provider: 'google',
+  providerId: string,
+  displayName: string,
+  email?: string,
+): Promise<{ token: string; user: AuthUser; isNew: boolean }> {
+  // Check if a user already exists with this provider + auth_id
+  const existing = await db.select({
+    id: users.id,
+    displayName: users.displayName,
+    authProvider: users.authProvider,
+  })
+    .from(users)
+    .where(and(eq(users.authProvider, provider), eq(users.authId, providerId)))
+    .limit(1);
+
+  if (existing[0]) {
+    const row = existing[0];
+
+    // Update display name if it changed
+    if (row.displayName !== displayName) {
+      await db.update(users)
+        .set({ displayName })
+        .where(eq(users.id, row.id));
+    }
+
+    const user: AuthUser = {
+      id: row.id,
+      displayName,
+      authProvider: row.authProvider ?? provider,
+    };
+
+    const token = signToken(user.id, user.displayName);
+    return { token, user, isNew: false };
+  }
+
+  // Create new user
+  const [inserted] = await db.insert(users).values({
+    displayName,
+    authProvider: provider,
+    authId: providerId,
+  }).returning({
+    id: users.id,
+    displayName: users.displayName,
+    authProvider: users.authProvider,
+  });
+
+  if (!inserted) throw new Error('Failed to create OAuth user');
+
+  const user: AuthUser = {
+    id: inserted.id,
+    displayName: inserted.displayName,
+    authProvider: inserted.authProvider ?? provider,
+  };
+
+  const token = signToken(user.id, user.displayName);
+  return { token, user, isNew: true };
+}
+
+/** Link an existing guest account to an OAuth provider. */
+export async function linkOAuthToGuest(
+  guestUserId: string,
+  provider: 'google',
+  providerId: string,
+  displayName: string,
+): Promise<{ token: string; user: AuthUser }> {
+  const [updated] = await db.update(users)
+    .set({
+      authProvider: provider,
+      authId: providerId,
+      displayName,
+    })
+    .where(and(eq(users.id, guestUserId), eq(users.authProvider, 'guest')))
+    .returning({
+      id: users.id,
+      displayName: users.displayName,
+      authProvider: users.authProvider,
+    });
+
+  if (!updated) throw new Error('Guest user not found or already linked');
+
+  const user: AuthUser = {
+    id: updated.id,
+    displayName: updated.displayName,
+    authProvider: updated.authProvider ?? provider,
+  };
+
+  const token = signToken(user.id, user.displayName);
+  return { token, user };
 }

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, watch, onMounted } from 'vue';
+import { ref, computed, watch, onMounted, nextTick } from 'vue';
 import AppSelect from '@/components/ui/AppSelect.vue';
 import AppButton from '@/components/ui/AppButton.vue';
 import AppSlider from '@/components/ui/AppSlider.vue';
@@ -77,7 +77,7 @@ const teamOptions = computed(() => {
 
 // Reset team selection when league changes
 watch(selectedLeague, () => {
-  selectedTeam.value = ['all'];
+  selectedTeam.value.splice(0, selectedTeam.value.length, 'all');
 });
 
 // Pick a random team from the current league
@@ -85,7 +85,7 @@ function selectRandomTeam(): void {
   const teams = teamOptions.value.filter((t) => t.value !== 'all');
   if (teams.length === 0) return;
   const random = teams[Math.floor(Math.random() * teams.length)];
-  selectedTeam.value = [random.value];
+  setArkValue(selectedTeam, random.value);
 }
 
 // Weighted random pick utility
@@ -112,7 +112,7 @@ function randomiseAll(): void {
 
   // Random league
   const randomLeague = leagues[Math.floor(Math.random() * leagues.length)];
-  selectedLeague.value = [randomLeague.value];
+  setArkValue(selectedLeague, randomLeague.value);
 
   // Wait one tick for teamOptions to recompute, then pick team
   // Since Vue reactivity is synchronous for computed, teamOptions updates immediately
@@ -131,40 +131,49 @@ function randomiseAll(): void {
   // 30% chance of "all", 70% chance of specific team
   if (teamsForLeague.length > 0 && Math.random() > 0.3) {
     const randomTeam = teamsForLeague[Math.floor(Math.random() * teamsForLeague.length)];
-    selectedTeam.value = [randomTeam.value];
+    setArkValue(selectedTeam, randomTeam.value);
   } else {
-    selectedTeam.value = ['all'];
+    setArkValue(selectedTeam, 'all');
   }
 
   // Random stat type
   const statTypes = [...statTypeOptions];
-  selectedStatType.value = [statTypes[Math.floor(Math.random() * statTypes.length)].value];
+  setArkValue(selectedStatType, statTypes[Math.floor(Math.random() * statTypes.length)].value);
 
   // Weighted target score: 501 70%, 301 15%, 701 10%, 1001 5%
-  targetScore.value = [weightedPick([
+  setArkValue(targetScore, weightedPick([
     { value: '501', weight: 70 },
     { value: '301', weight: 15 },
     { value: '701', weight: 10 },
     { value: '1001', weight: 5 },
-  ])];
+  ]));
 
   // Weighted match format: Best of 1: 30%, Best of 3: 50%, Best of 5: 20%
-  matchFormat.value = [weightedPick([
+  setArkValue(matchFormat, weightedPick([
     { value: '1', weight: 30 },
     { value: '3', weight: 50 },
     { value: '5', weight: 20 },
-  ])];
+  ]));
 
   // Random timer between 30-45s in 5s steps
   const timerSteps = [30, 35, 40, 45];
-  timerDuration.value = [timerSteps[Math.floor(Math.random() * timerSteps.length)]];
+  setArkNumValue(timerDuration, timerSteps[Math.floor(Math.random() * timerSteps.length)]);
 
   // 20% chance of bogey numbers
   enableBogeyNumbers.value = Math.random() < 0.2;
 }
 
+// Helper: update an Ark UI bound array in-place so the component sees the change.
+function setArkValue(target: { value: string[] }, newVal: string): void {
+  target.value.splice(0, target.value.length, newVal);
+}
+
+function setArkNumValue(target: { value: number[] }, newVal: number): void {
+  target.value.splice(0, target.value.length, newVal);
+}
+
 // Apply a preset configuration
-function applyPreset(preset: {
+async function applyPreset(preset: {
   league?: string;
   team?: string;
   statType?: string;
@@ -172,28 +181,29 @@ function applyPreset(preset: {
   matchFormat?: string;
   timerDuration?: number;
   enableBogeyNumbers?: boolean;
-}): void {
+}): Promise<void> {
+  // Set league first — the watcher will reset team to ['all']
   if (preset.league !== undefined) {
-    selectedLeague.value = [preset.league];
+    setArkValue(selectedLeague, preset.league);
   }
 
-  // Need to set team after league so the watcher fires first
+  // Wait for the league watcher to fire and reset team before overriding
+  await nextTick();
+
   if (preset.team !== undefined) {
-    // Use nextTick-like approach: set immediately after league watcher resets
-    selectedTeam.value = [preset.team];
+    setArkValue(selectedTeam, preset.team);
   }
-
   if (preset.statType !== undefined) {
-    selectedStatType.value = [preset.statType];
+    setArkValue(selectedStatType, preset.statType);
   }
   if (preset.targetScore !== undefined) {
-    targetScore.value = [preset.targetScore];
+    setArkValue(targetScore, preset.targetScore);
   }
   if (preset.matchFormat !== undefined) {
-    matchFormat.value = [preset.matchFormat];
+    setArkValue(matchFormat, preset.matchFormat);
   }
   if (preset.timerDuration !== undefined) {
-    timerDuration.value = [preset.timerDuration];
+    setArkNumValue(timerDuration, preset.timerDuration);
   }
   if (preset.enableBogeyNumbers !== undefined) {
     enableBogeyNumbers.value = preset.enableBogeyNumbers;

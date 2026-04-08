@@ -277,7 +277,8 @@ const handlePlayerSelect = async (player: PlayerOption) => {
         bustMessage: result.bustMessage,
       };
     }
-  } catch {
+  } catch (err) {
+    console.error('[GameView] handlePlayerSelect error:', err);
     submitting.value = false;
     if (!isLegFinished.value && !isMatchFinished.value) {
       timerRunning.value = true;

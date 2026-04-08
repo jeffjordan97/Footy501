@@ -52,9 +52,9 @@ const presets = computed<readonly GamePreset[]>(() => [
     icon: '\uD83C\uDFC6',
     apply: () => {
       gameConfigRef.value?.applyPreset({
-        league: 'GB1',
+        league: 'Premier League',
         team: 'all',
-        statType: 'GOALS',
+        statType: 'APPEARANCES_AND_GOALS',
         targetScore: '501',
         matchFormat: '3',
         timerDuration: 45,

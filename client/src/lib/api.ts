@@ -108,6 +108,11 @@ export async function getDailyLeaderboard() {
   return request<{ entries: DailyLeaderboardEntry[] }>('/daily/leaderboard');
 }
 
+// Auth APIs
+export async function getAuthProviders() {
+  return request<{ providers: { google: boolean; guest: boolean } }>('/auth/providers');
+}
+
 // Types
 
 /** Opaque server-side match state -- structured fields accessed via store computed properties */

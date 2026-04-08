@@ -88,7 +88,7 @@ export async function createGame(
     throw new Error('Failed to create game record');
   }
 
-  return { gameId: inserted.id, state };
+  return { gameId: inserted.id, state: serializeState(state) as unknown as MatchState };
 }
 
 /**
@@ -167,7 +167,7 @@ export async function submitGameAnswer(
   });
 
   return {
-    state: updatedState,
+    state: serializeState(updatedState) as unknown as MatchState,
     turnResult,
     statValue,
     bustMessage,
@@ -208,7 +208,7 @@ export async function handleGameTimeout(
     scoreAfter: lastTurn?.scoreAfter ?? 0,
   });
 
-  return { state: updatedState };
+  return { state: serializeState(updatedState) as unknown as MatchState };
 }
 
 /**
@@ -232,8 +232,35 @@ export async function getGame(
   }
 
   return {
-    state: row.state as MatchState,
+    state: serializeState(row.state as MatchState) as unknown as MatchState,
     status: row.status,
+  };
+}
+
+/**
+ * Serialize a MatchState for JSON responses.
+ *
+ * Converts Set instances (usedPlayerIds) to arrays so JSON.stringify
+ * produces iterable data the client can reconstruct.
+ */
+function serializeState(state: MatchState): Record<string, unknown> {
+  return {
+    ...state,
+    legs: state.legs.map((leg) => {
+      const ids = leg.usedPlayerIds;
+      let serializedIds: string[];
+      if (ids instanceof Set) {
+        serializedIds = [...ids];
+      } else if (Array.isArray(ids)) {
+        serializedIds = ids;
+      } else if (ids && typeof ids === 'object') {
+        // JSONB stores Set as plain object with numeric keys
+        serializedIds = Object.values(ids as unknown as Record<string, string>).flat();
+      } else {
+        serializedIds = [];
+      }
+      return { ...leg, usedPlayerIds: serializedIds };
+    }),
   };
 }
 
