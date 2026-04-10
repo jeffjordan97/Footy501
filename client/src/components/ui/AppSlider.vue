@@ -10,19 +10,14 @@ defineProps<{
 }>();
 
 const model = defineModel<number[]>({ default: () => [45] });
-
-const onValueChange = (e: { value: number[] }) => {
-  model.value = e.value;
-};
 </script>
 
 <template>
   <Slider.Root
+    v-model="model"
     :min="min"
     :max="max"
     :step="step ?? 1"
-    :value="model"
-    @value-change="onValueChange"
     class="flex flex-col gap-2"
   >
     <div class="flex items-center justify-between">

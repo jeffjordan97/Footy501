@@ -16,7 +16,6 @@ const gameStore = useGameStore();
 
 const playerName = ref('');
 const gameConfigRef = ref<InstanceType<typeof GameConfig>>();
-const presetChipsRef = ref<InstanceType<typeof PresetChips>>();
 const creating = ref(false);
 const errorMessage = ref<string | null>(null);
 
@@ -133,7 +132,7 @@ const startGame = async () => {
       </AppCard>
 
       <!-- Quick Presets -->
-      <PresetChips ref="presetChipsRef" :presets="presets" />
+      <PresetChips :presets="presets" />
 
       <!-- Game Settings -->
       <AppCard class="p-6">

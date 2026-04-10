@@ -148,7 +148,7 @@ export const useGameStore = defineStore('game', () => {
       }
 
       // Extract player names from the first leg
-      const legs = response.state.legs as Array<{ players: Array<{ name: string }> }> | undefined;
+      const legs = response.state.legs as unknown as Array<{ players: Array<{ name: string }> }> | undefined;
       if (legs?.[0]?.players) {
         player1Name.value = legs[0].players[0]?.name ?? 'Player 1';
         player2Name.value = legs[0].players[1]?.name ?? 'Player 2';

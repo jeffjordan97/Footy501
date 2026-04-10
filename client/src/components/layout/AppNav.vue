@@ -27,6 +27,10 @@ function closeDropdown(): void {
   showDropdown.value = false;
 }
 
+function delayedCloseDropdown(): void {
+  setTimeout(closeDropdown, 150);
+}
+
 function handleLogout(): void {
   closeDropdown();
   authStore.logout();
@@ -61,7 +65,7 @@ function handleLinkGoogle(): void {
         <button
           class="flex items-center gap-2 text-sm text-text-muted hover:text-text transition-colors duration-150 cursor-pointer rounded-lg px-2 py-1 hover:bg-bg-elevated"
           @click="toggleDropdown"
-          @blur="() => setTimeout(closeDropdown, 150)"
+          @blur="delayedCloseDropdown"
         >
           <!-- Provider icon -->
           <svg v-if="user.authProvider === 'google'" class="w-4 h-4" viewBox="0 0 24 24" aria-hidden="true">
