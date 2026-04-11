@@ -87,7 +87,6 @@ export async function findOrCreateOAuthUser(
   provider: 'google',
   providerId: string,
   displayName: string,
-  email?: string,
 ): Promise<{ token: string; user: AuthUser; isNew: boolean }> {
   // Check if a user already exists with this provider + auth_id
   const existing = await db.select({

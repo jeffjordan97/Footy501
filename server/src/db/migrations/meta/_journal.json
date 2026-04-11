@@ -15,6 +15,13 @@
       "when": 1774200950543,
       "tag": "0001_sweet_shen",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1775900881784,
+      "tag": "0002_tearful_agent_zero",
+      "breakpoints": true
     }
   ]
 }

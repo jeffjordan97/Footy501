@@ -53,6 +53,11 @@ const router = createRouter({
       component: () => import('@/views/AccountView.vue'),
     },
     {
+      path: '/privacy',
+      name: 'privacy',
+      component: () => import('@/views/PrivacyPolicyView.vue'),
+    },
+    {
       path: '/auth/callback',
       name: 'auth-callback',
       component: () => import('@/views/AuthCallbackView.vue'),

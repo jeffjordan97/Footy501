@@ -8,7 +8,7 @@ const isHome = computed(() => route.path === '/');
 </script>
 
 <template>
-  <nav class="w-full px-6 py-4 flex items-center justify-between border-b border-border">
+  <nav class="relative z-20 w-full px-6 py-4 flex items-center justify-between border-b border-border">
     <router-link
       to="/"
       class="font-display text-xl font-bold text-text hover:text-primary-light transition-colors duration-150 cursor-pointer"

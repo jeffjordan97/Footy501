@@ -213,7 +213,7 @@ router.get('/google/callback', async (req, res) => {
       const result = await linkOAuthToGuest(linkTo, 'google', googleUser.id, googleUser.name);
       token = result.token;
     } else {
-      const result = await findOrCreateOAuthUser('google', googleUser.id, googleUser.name, googleUser.email);
+      const result = await findOrCreateOAuthUser('google', googleUser.id, googleUser.name);
       token = result.token;
       isNew = result.isNew;
     }

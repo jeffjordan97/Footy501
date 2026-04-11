@@ -12,7 +12,7 @@ export function getGoogleAuthUrl(state?: string): string {
     client_id: GOOGLE_CLIENT_ID!,
     redirect_uri: GOOGLE_REDIRECT_URI!,
     response_type: 'code',
-    scope: 'openid email profile',
+    scope: 'openid profile',
     state: state ?? '',
     access_type: 'offline',
   });
@@ -47,12 +47,12 @@ export async function exchangeGoogleCode(code: string): Promise<{ accessToken: s
 
 export async function getGoogleUser(
   accessToken: string,
-): Promise<{ id: string; name: string; email: string }> {
+): Promise<{ id: string; name: string }> {
   const response = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
     headers: { Authorization: `Bearer ${accessToken}` },
   });
 
-  const data = (await response.json()) as { id: string; name: string; email: string };
+  const data = (await response.json()) as { id: string; name: string };
 
-  return { id: data.id, name: data.name, email: data.email };
+  return { id: data.id, name: data.name };
 }

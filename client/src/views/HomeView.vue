@@ -39,7 +39,7 @@ const gameModes = [
     </div>
 
     <!-- Top bar -->
-    <div class="relative z-10 flex justify-end px-6 pt-4">
+    <div class="relative z-20 flex justify-end px-6 pt-4">
       <UserMenu />
     </div>
 
@@ -122,8 +122,10 @@ const gameModes = [
     </div>
 
     <!-- Footer -->
-    <footer class="relative z-10 text-center py-6 text-text-muted text-xs">
-      Darts meets football trivia
+    <footer class="relative z-10 text-center py-6 text-text-muted text-xs flex items-center justify-center gap-3">
+      <span>Darts meets football trivia</span>
+      <span class="opacity-30">|</span>
+      <router-link to="/privacy" class="hover:text-text transition-colors">Privacy</router-link>
     </footer>
   </div>
 </template>

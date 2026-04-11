@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted } from 'vue';
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
 import { useRouter } from 'vue-router';
 import { storeToRefs } from 'pinia';
 import { useAuthStore } from '@/stores/auth';
@@ -9,7 +9,7 @@ const authStore = useAuthStore();
 const { isAuthenticated, user, isGuest, providers } = storeToRefs(authStore);
 
 const showMenu = ref(false);
-const menuRef = ref<HTMLElement | null>(null);
+const wrapperRef = ref<HTMLElement | null>(null);
 
 const initial = computed(() => {
   const name = user.value?.displayName ?? '';
@@ -23,57 +23,62 @@ const providerLabel = computed(() => {
   }
 });
 
+// Close menu when clicking outside — added/removed dynamically
+function onDocumentClick(e: MouseEvent): void {
+  if (wrapperRef.value && !wrapperRef.value.contains(e.target as Node)) {
+    showMenu.value = false;
+  }
+}
+
+watch(showMenu, (open) => {
+  if (open) {
+    // Defer so the current click (that opened the menu) doesn't immediately close it
+    setTimeout(() => document.addEventListener('click', onDocumentClick), 0);
+  } else {
+    document.removeEventListener('click', onDocumentClick);
+  }
+});
+
+onUnmounted(() => {
+  document.removeEventListener('click', onDocumentClick);
+});
+
 function toggle(): void {
   showMenu.value = !showMenu.value;
 }
 
-function close(): void {
-  showMenu.value = false;
-}
-
-function handleClickOutside(e: MouseEvent): void {
-  if (menuRef.value && !menuRef.value.contains(e.target as Node)) {
-    close();
-  }
-}
-
 function goToAccount(): void {
-  close();
+  showMenu.value = false;
   router.push({ name: 'account' });
 }
 
 function handleLinkGoogle(): void {
-  close();
+  showMenu.value = false;
   authStore.linkGoogle();
 }
 
 function handleLogout(): void {
-  close();
+  showMenu.value = false;
   authStore.logout();
+  router.push({ name: 'home' });
 }
 
 onMounted(() => {
-  document.addEventListener('click', handleClickOutside, true);
   authStore.fetchProviders();
   if (authStore.token && !authStore.user) {
     authStore.loadUser();
   }
 });
-
-onUnmounted(() => {
-  document.removeEventListener('click', handleClickOutside, true);
-});
 </script>
 
 <template>
-  <div ref="menuRef" class="relative">
+  <div ref="wrapperRef" class="relative">
     <!-- Signed in: avatar button -->
     <template v-if="isAuthenticated && user">
       <button
         class="flex items-center gap-2 rounded-lg px-2 py-1.5 text-sm text-text-muted hover:text-text hover:bg-bg-elevated transition-colors duration-150 cursor-pointer"
         @click="toggle"
       >
-        <!-- Avatar circle -->
         <div
           class="w-7 h-7 rounded-full flex items-center justify-center text-xs font-display font-bold"
           :class="isGuest ? 'bg-bg-elevated text-text-muted border border-border' : 'bg-primary/20 text-primary-light'"
@@ -81,7 +86,6 @@ onUnmounted(() => {
           {{ initial }}
         </div>
         <span class="hidden sm:inline max-w-28 truncate">{{ user.displayName }}</span>
-        <!-- Chevron -->
         <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5 transition-transform duration-150" :class="showMenu ? 'rotate-180' : ''" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <path d="m6 9 6 6 6-6" />
         </svg>
