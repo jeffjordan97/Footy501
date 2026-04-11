@@ -22,6 +22,11 @@ export const useAuthStore = defineStore('auth', () => {
   const providers = ref<AuthProviders>({ google: false, guest: true });
 
   const isAuthenticated = computed(() => !!token.value && !!user.value);
+  const isGuest = computed(() => user.value?.authProvider === 'guest');
+
+  function authHeaders(): Record<string, string> {
+    return token.value ? { Authorization: `Bearer ${token.value}` } : {};
+  }
 
   async function fetchProviders(): Promise<void> {
     try {
@@ -72,7 +77,7 @@ export const useAuthStore = defineStore('auth', () => {
     loading.value = true;
     try {
       const res = await fetch(`${API_BASE}/auth/me`, {
-        headers: { Authorization: `Bearer ${token.value}` },
+        headers: authHeaders(),
       });
       if (!res.ok) {
         logout();
@@ -80,11 +85,65 @@ export const useAuthStore = defineStore('auth', () => {
       }
       const data = await res.json();
       user.value = data.user;
-    } catch (err) {
-      console.error('Failed to load user profile:', err);
+    } catch {
+      // Silently fail — user will appear as unauthenticated
     } finally {
       loading.value = false;
     }
+  }
+
+  async function updateDisplayName(displayName: string): Promise<void> {
+    loading.value = true;
+    try {
+      const res = await fetch(`${API_BASE}/auth/me`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
+        body: JSON.stringify({ displayName }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? 'Failed to update name');
+
+      token.value = data.token;
+      user.value = data.user;
+      localStorage.setItem(STORAGE_KEY, data.token);
+    } finally {
+      loading.value = false;
+    }
+  }
+
+  async function deleteAccount(): Promise<void> {
+    const res = await fetch(`${API_BASE}/auth/me/delete`, {
+      method: 'POST',
+      headers: authHeaders(),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error ?? 'Failed to delete account');
+    logout();
+  }
+
+  async function cancelDeletion(): Promise<void> {
+    const res = await fetch(`${API_BASE}/auth/me/cancel-delete`, {
+      method: 'POST',
+      headers: authHeaders(),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error ?? 'Failed to cancel deletion');
+    user.value = data.user;
+  }
+
+  async function exportData(): Promise<void> {
+    const res = await fetch(`${API_BASE}/auth/me/data`, {
+      headers: authHeaders(),
+    });
+    if (!res.ok) throw new Error('Failed to export data');
+    const data = await res.json();
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'footy501-data.json';
+    a.click();
+    URL.revokeObjectURL(url);
   }
 
   function logout(): void {
@@ -99,12 +158,17 @@ export const useAuthStore = defineStore('auth', () => {
     loading,
     providers,
     isAuthenticated,
+    isGuest,
     fetchProviders,
     loginAsGuest,
     loginWithGoogle,
     linkGoogle,
     handleOAuthCallback,
     loadUser,
+    updateDisplayName,
+    deleteAccount,
+    cancelDeletion,
+    exportData,
     logout,
   };
 });

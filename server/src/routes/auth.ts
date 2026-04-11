@@ -6,6 +6,10 @@ import {
   getUserById,
   findOrCreateOAuthUser,
   linkOAuthToGuest,
+  updateUserDisplayName,
+  softDeleteUser,
+  cancelUserDeletion,
+  exportUserData,
 } from '../services/auth-service.js';
 import {
   isGoogleConfigured,
@@ -61,6 +65,88 @@ router.get('/me', async (req, res) => {
   } catch (error) {
     console.error('Get user failed:', error);
     res.status(500).json({ error: 'Failed to get user' });
+  }
+});
+
+/** Helper: extract and verify the Bearer token, returning the userId. */
+function authenticateRequest(req: import('express').Request, res: import('express').Response): string | null {
+  const authHeader = req.headers.authorization;
+  if (!authHeader?.startsWith('Bearer ')) {
+    res.status(401).json({ error: 'No token provided' });
+    return null;
+  }
+  const payload = verifyToken(authHeader.slice(7));
+  if (!payload) {
+    res.status(401).json({ error: 'Invalid or expired token' });
+    return null;
+  }
+  return payload.userId;
+}
+
+const DisplayNameSchema = z.object({
+  displayName: z.string().trim().min(1).max(30),
+});
+
+/** PATCH /api/auth/me - Update display name. */
+router.patch('/me', async (req, res) => {
+  const userId = authenticateRequest(req, res);
+  if (!userId) return;
+
+  const parsed = DisplayNameSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: 'Display name must be 1-30 characters' });
+    return;
+  }
+
+  try {
+    const result = await updateUserDisplayName(userId, parsed.data.displayName);
+    res.json(result);
+  } catch (error) {
+    console.error('Update display name failed:', error);
+    res.status(500).json({ error: 'Failed to update display name' });
+  }
+});
+
+/** GET /api/auth/me/data - Export all user data as JSON. */
+router.get('/me/data', async (req, res) => {
+  const userId = authenticateRequest(req, res);
+  if (!userId) return;
+
+  try {
+    const data = await exportUserData(userId);
+    res.setHeader('Content-Disposition', 'attachment; filename="footy501-data.json"');
+    res.json(data);
+  } catch (error) {
+    console.error('Export data failed:', error);
+    res.status(500).json({ error: 'Failed to export data' });
+  }
+});
+
+/** POST /api/auth/me/delete - Initiate account soft-delete (14-day grace period). */
+router.post('/me/delete', async (req, res) => {
+  const userId = authenticateRequest(req, res);
+  if (!userId) return;
+
+  try {
+    await softDeleteUser(userId);
+    res.json({ message: 'Account scheduled for deletion in 14 days. Sign in again to cancel.' });
+  } catch (error) {
+    console.error('Delete account failed:', error);
+    res.status(500).json({ error: 'Failed to delete account' });
+  }
+});
+
+/** POST /api/auth/me/cancel-delete - Cancel pending account deletion. */
+router.post('/me/cancel-delete', async (req, res) => {
+  const userId = authenticateRequest(req, res);
+  if (!userId) return;
+
+  try {
+    const user = await cancelUserDeletion(userId);
+    res.json({ user });
+  } catch (error) {
+    console.error('Cancel deletion failed:', error);
+    res.status(500).json({ error: 'Failed to cancel deletion' });
   }
 });
 
