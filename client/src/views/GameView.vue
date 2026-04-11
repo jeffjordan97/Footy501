@@ -114,6 +114,13 @@ const isPlayerInputDisabled = computed(() =>
   submitting.value || isLegFinished.value || isMatchFinished.value,
 );
 
+const hasTimer = computed(() => timerDuration.value > 0);
+
+// Solo mode: player 2 is a phantom ("Target", "Practice Mode") — auto-skip their turns
+const SOLO_PLAYER2_NAMES = new Set(['Target', 'Practice Mode']);
+const isSoloMode = computed(() => SOLO_PLAYER2_NAMES.has(player2Name.value));
+const isPlayer2Turn = computed(() => activePlayerIndex.value === 1);
+
 // --- Near-miss checkout feedback ---
 
 const activePlayerScore = computed(() =>
@@ -176,6 +183,30 @@ onUnmounted(() => {
   if (answerToastTimer) clearTimeout(answerToastTimer);
   gameStore.disconnectFromGame();
 });
+
+// --- Solo mode: auto-skip player 2 turns ---
+
+watch(
+  [isPlayer2Turn, isSoloMode, loading],
+  ([p2Turn, solo, isLoading]) => {
+    if (p2Turn && solo && !isLoading && !submitting.value && !isLegFinished.value && !isMatchFinished.value) {
+      // Small delay so the UI doesn't flash
+      setTimeout(async () => {
+        if (activePlayerIndex.value !== 1) return; // Guard against race
+        submitting.value = true;
+        try {
+          await gameStore.handlePlayerTimeout();
+        } finally {
+          submitting.value = false;
+          if (!isLegFinished.value && !isMatchFinished.value && hasTimer.value) {
+            timerRunning.value = true;
+          }
+        }
+      }, 100);
+    }
+  },
+  { immediate: true },
+);
 
 // --- Error watcher ---
 
@@ -405,8 +436,8 @@ const handleGoHome = () => {
         :active-player="activePlayerIndex"
         :leg-wins="legWins"
         :target-score="targetScore"
-        :timer-duration="timerDuration"
-        :timer-running="timerRunning && !isPlayerInputDisabled"
+        :timer-duration="hasTimer ? timerDuration : 0"
+        :timer-running="hasTimer && timerRunning && !isPlayerInputDisabled"
         @timeout="handleTimeout"
       />
 

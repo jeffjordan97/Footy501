@@ -49,7 +49,6 @@ const matchFormatOptions = [
 const statTypeOptions = [
   { value: 'APPEARANCES', label: 'Appearances' },
   { value: 'APPEARANCES_AND_GOALS', label: 'Appearances + Goals' },
-  { value: 'APPEARANCES_MINUS_GOALS', label: 'Appearances - Goals' },
 ] as const;
 
 // Derive league options from categories

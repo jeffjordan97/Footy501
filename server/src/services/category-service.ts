@@ -21,7 +21,7 @@ const LEAGUE_NAMES: Record<string, string> = {
 };
 
 /** Stat types available for league-wide categories. */
-const LEAGUE_STAT_TYPES = ['APPEARANCES', 'APPEARANCES_AND_GOALS', 'APPEARANCES_MINUS_GOALS'] as const;
+const LEAGUE_STAT_TYPES = ['APPEARANCES', 'APPEARANCES_AND_GOALS'] as const;
 
 /** Stat types available for per-team categories. */
 const TEAM_STAT_TYPES = ['APPEARANCES'] as const;
@@ -107,8 +107,6 @@ function formatStatType(statType: string): string {
       return 'Goals';
     case 'APPEARANCES_AND_GOALS':
       return 'Appearances & Goals';
-    case 'APPEARANCES_MINUS_GOALS':
-      return 'Appearances - Goals';
     case 'APPEARANCES_AND_CLEAN_SHEETS':
       return 'Appearances & Clean Sheets';
     default:

@@ -6,6 +6,7 @@ import AppContainer from '@/components/layout/AppContainer.vue';
 import AppCard from '@/components/ui/AppCard.vue';
 import AppButton from '@/components/ui/AppButton.vue';
 import AppBadge from '@/components/ui/AppBadge.vue';
+import AppInput from '@/components/ui/AppInput.vue';
 import ShareableResult from '@/components/game/ShareableResult.vue';
 import DailyCountdown from '@/components/daily/DailyCountdown.vue';
 import DailyLeaderboard from '@/components/daily/DailyLeaderboard.vue';
@@ -22,6 +23,8 @@ import {
 const router = useRouter();
 const authStore = useAuthStore();
 
+const playerCount = ref<1 | 2>(1);
+const player2Name = ref('');
 const loadingChallenge = ref(true);
 const loadingLeaderboard = ref(true);
 const starting = ref(false);
@@ -102,7 +105,8 @@ const startDaily = async () => {
   const guestId = authStore.user ? undefined : localStorage.getItem('footy501_guest_id') ?? undefined;
 
   try {
-    const { gameId, alreadyPlayed } = await startDailyAttempt(displayName, guestId);
+    const p2 = playerCount.value === 2 ? (player2Name.value || 'Player 2') : undefined;
+    const { gameId, alreadyPlayed } = await startDailyAttempt(displayName, guestId, p2);
 
     if (alreadyPlayed) {
       hasPlayed.value = true;
@@ -157,6 +161,29 @@ const startDaily = async () => {
         </p>
 
         <template v-if="!hasPlayed">
+          <!-- Player count toggle -->
+          <div class="flex rounded-lg bg-bg-elevated p-1 gap-1 w-full max-w-xs">
+            <button
+              v-for="option in ([1, 2] as const)"
+              :key="option"
+              class="flex-1 text-xs font-medium py-1.5 px-2 rounded-md transition-all duration-150 cursor-pointer"
+              :class="playerCount === option
+                ? 'bg-primary text-white shadow-card'
+                : 'text-text-muted hover:text-text'"
+              @click="playerCount = option"
+            >
+              {{ option === 1 ? '1 Player' : '2 Players' }}
+            </button>
+          </div>
+
+          <!-- Player 2 name (2P mode only) -->
+          <AppInput
+            v-if="playerCount === 2"
+            v-model="player2Name"
+            placeholder="Player 2 name"
+            class="w-full max-w-xs"
+          />
+
           <AppButton
             variant="primary"
             size="lg"
@@ -170,10 +197,12 @@ const startDaily = async () => {
         <template v-else>
           <ShareableResult
             :category-name="todaysChallenge?.categoryName ?? 'Unknown Category'"
+            :target-score="501"
             :final-score="personalBest ?? 0"
             :turns-taken="personalTurns ?? 0"
             :is-winner="personalBest === 0"
             :footballers-named="personalFootballers"
+            player2-name="Target"
             :is-daily="true"
             :date="todayDateString()"
           />

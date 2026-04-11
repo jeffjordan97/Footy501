@@ -10,6 +10,7 @@ const props = withDefaults(
     finalScore: number;
     isMatchWin: boolean;
     categoryName?: string;
+    targetScore?: number;
     turnsTaken?: number;
     opponentName?: string;
     opponentScore?: number;
@@ -19,6 +20,7 @@ const props = withDefaults(
   }>(),
   {
     categoryName: '',
+    targetScore: 501,
     turnsTaken: 0,
     footballersNamed: () => [],
     isDaily: false,
@@ -166,6 +168,7 @@ onUnmounted(() => {
           <ShareableResult
             v-if="showShareCard && categoryName"
             :category-name="categoryName"
+            :target-score="targetScore"
             :final-score="finalScore"
             :turns-taken="turnsTaken"
             :is-winner="finalScore === 0"

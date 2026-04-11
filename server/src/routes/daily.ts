@@ -14,6 +14,7 @@ const router: RouterType = Router();
 const StartSchema = z.object({
   displayName: z.string().min(1).max(30),
   userId: z.string().uuid().optional(),
+  player2Name: z.string().min(1).max(30).optional(),
 });
 
 const CompleteSchema = z.object({
@@ -45,16 +46,18 @@ router.post('/start', async (req, res) => {
     const challenge = await getTodayChallenge();
     const userId = parsed.data.userId ?? null;
 
+    const player2Name = parsed.data.player2Name;
+
     // Check if already played
     const status = await hasPlayedToday(challenge.id, userId, parsed.data.displayName);
     if (status.played && status.attemptId && status.gameId) {
       // Allow resuming an existing attempt
-      const result = await startDailyAttempt(challenge.id, userId, parsed.data.displayName);
+      const result = await startDailyAttempt(challenge.id, userId, parsed.data.displayName, player2Name);
       res.json(result);
       return;
     }
 
-    const result = await startDailyAttempt(challenge.id, userId, parsed.data.displayName);
+    const result = await startDailyAttempt(challenge.id, userId, parsed.data.displayName, player2Name);
     res.status(201).json(result);
   } catch (error) {
     console.error('Start daily attempt failed:', error);

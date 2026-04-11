@@ -122,6 +122,7 @@ export async function startDailyAttempt(
   challengeId: string,
   userId: string | null,
   displayName: string,
+  player2Name?: string,
 ): Promise<{ readonly attemptId: string; readonly gameId: string; readonly state: import('../lib/game-engine/types.js').MatchState }> {
   // Check for existing attempt
   const existingResult = await findExistingAttempt(challengeId, userId, displayName);
@@ -150,11 +151,11 @@ export async function startDailyAttempt(
     throw new Error(`Daily challenge not found: ${challengeId}`);
   }
 
-  // Create a solo game (single leg, target 501, no opponent)
+  // Create a solo game (single leg, target 501, no timer, no opponent)
   const { gameId, state } = await createGame({
     targetScore: 501,
     matchFormat: 1,
-    timerDuration: 30,
+    timerDuration: 0,
     enableBogeyNumbers: false,
     categoryId: challenge.categoryId,
     categoryName: challenge.categoryName,
@@ -162,7 +163,7 @@ export async function startDailyAttempt(
     teamId: challenge.teamId ?? undefined,
     statType: challenge.statType,
     player1Name: displayName,
-    player2Name: 'Target',
+    player2Name: player2Name ?? 'Target',
   });
 
   // Record the attempt

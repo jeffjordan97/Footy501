@@ -10,6 +10,7 @@ import AppButton from '@/components/ui/AppButton.vue';
 import AppBadge from '@/components/ui/AppBadge.vue';
 import TurnHistory from '@/components/game/TurnHistory.vue';
 import LegProgress from '@/components/game/LegProgress.vue';
+import ShareableResult from '@/components/game/ShareableResult.vue';
 import AuthNudge from '@/components/auth/AuthNudge.vue';
 
 const route = useRoute();
@@ -24,6 +25,8 @@ const {
   legWins,
   matchFormat,
   winner,
+  targetScore,
+  categoryName,
 } = storeToRefs(gameStore);
 
 const winnerName = computed(() => {
@@ -54,6 +57,22 @@ const player2TotalScore = computed(() => {
 });
 
 const legsPlayed = computed(() => state.value?.legs.length ?? 0);
+
+const legs = computed(() => state.value?.legs ?? []);
+
+const footballersNamed = computed(() =>
+  allTurns.value
+    .filter((t): t is typeof t & { footballerName: string } => t.footballerName != null)
+    .map((t) => t.footballerName),
+);
+
+const finalScore = computed(() => {
+  if (winner.value === 0) return 0;
+  if (winner.value === 1) return 0;
+  // No checkout — return remaining score
+  const lastLeg = state.value?.legs[state.value.legs.length - 1];
+  return lastLeg?.players[0]?.score ?? 0;
+});
 
 onMounted(async () => {
   const routeGameId = route.params.id as string;
@@ -155,6 +174,22 @@ const handleHome = () => {
           :player2-name="player2Name"
         />
       </AppCard>
+
+      <!-- Share -->
+      <ShareableResult
+        :category-name="categoryName"
+        :target-score="targetScore"
+        :final-score="finalScore"
+        :turns-taken="totalTurns"
+        :is-winner="winner != null"
+        :turns="allTurns"
+        :legs="legs"
+        :player1-name="player1Name"
+        :player2-name="player2Name"
+        :leg-wins="legWins"
+        :match-format="matchFormat"
+        :footballers-named="footballersNamed"
+      />
 
       <!-- Actions -->
       <div class="flex gap-3 justify-center">

@@ -1,8 +1,9 @@
 <script setup lang="ts">
+import { computed } from 'vue';
 import PlayerPanel from './PlayerPanel.vue';
 import GameTimer from './GameTimer.vue';
 
-defineProps<{
+const props = defineProps<{
   player1Name: string;
   player2Name: string;
   player1Score: number;
@@ -17,10 +18,14 @@ defineProps<{
 defineEmits<{
   timeout: [];
 }>();
+
+const SOLO_PLAYER2_NAMES = new Set(['Target', 'Practice Mode']);
+const isSoloMode = computed(() => SOLO_PLAYER2_NAMES.has(props.player2Name));
+const showTimer = computed(() => props.timerDuration > 0);
 </script>
 
 <template>
-  <div class="grid grid-cols-2 gap-3">
+  <div :class="isSoloMode ? '' : 'grid grid-cols-2 gap-3'">
     <PlayerPanel
       :player-name="player1Name"
       :player-number="1"
@@ -30,7 +35,7 @@ defineEmits<{
       :target-score="targetScore"
     >
       <GameTimer
-        v-if="activePlayer === 0"
+        v-if="showTimer && activePlayer === 0"
         :duration="timerDuration"
         :running="timerRunning"
         compact
@@ -38,6 +43,7 @@ defineEmits<{
       />
     </PlayerPanel>
     <PlayerPanel
+      v-if="!isSoloMode"
       :player-name="player2Name"
       :player-number="2"
       :score="player2Score"
@@ -46,7 +52,7 @@ defineEmits<{
       :target-score="targetScore"
     >
       <GameTimer
-        v-if="activePlayer === 1"
+        v-if="showTimer && activePlayer === 1"
         :duration="timerDuration"
         :running="timerRunning"
         compact

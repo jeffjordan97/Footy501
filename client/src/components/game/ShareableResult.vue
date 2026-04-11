@@ -2,11 +2,32 @@
 import { ref, computed } from 'vue';
 import AppButton from '@/components/ui/AppButton.vue';
 
+export interface ShareTurn {
+  readonly playerIndex: 0 | 1;
+  readonly scoreAfter: number;
+  readonly result: string;
+  readonly statValue: number | null;
+  readonly footballerName: string | null;
+}
+
+export interface ShareLeg {
+  readonly turns: readonly ShareTurn[];
+}
+
 interface Props {
   categoryName: string;
+  targetScore: number;
   finalScore: number;
   turnsTaken: number;
   isWinner: boolean;
+  /** Turns from the current/only leg (for 1P arrow chain) */
+  turns?: readonly ShareTurn[];
+  /** All legs (for 2P match summary) */
+  legs?: readonly ShareLeg[];
+  player1Name?: string;
+  player2Name?: string;
+  legWins?: readonly [number, number];
+  matchFormat?: number;
   opponentName?: string;
   opponentScore?: number;
   footballersNamed: string[];
@@ -16,25 +37,144 @@ interface Props {
 
 const props = withDefaults(defineProps<Props>(), {
   isDaily: false,
+  targetScore: 501,
 });
 
 const shareFeedback = ref<string | null>(null);
 const downloading = ref(false);
 const sharing = ref(false);
 
-const OPTIMAL_TURNS = 12;
-
-const performanceRatio = computed(() =>
-  Math.min(props.turnsTaken / OPTIMAL_TURNS, 1),
+const SOLO_PLAYER2_NAMES = new Set(['Target', 'Practice Mode']);
+const isSoloMode = computed(() =>
+  SOLO_PLAYER2_NAMES.has(props.player2Name ?? '') || SOLO_PLAYER2_NAMES.has(props.opponentName ?? ''),
 );
 
-const performanceLabel = computed(() => {
-  const ratio = performanceRatio.value;
-  if (ratio <= 0.5) return 'Exceptional';
-  if (ratio <= 0.7) return 'Great';
-  if (ratio <= 0.85) return 'Good';
-  return 'Solid';
+// --- Arrow chain for 1P / solo ---
+
+const arrowChain = computed(() => {
+  if (!props.turns || props.turns.length === 0) return null;
+
+  // Filter to player 1 turns only in solo mode, all turns otherwise
+  const relevantTurns = isSoloMode.value
+    ? props.turns.filter((t) => t.playerIndex === 0)
+    : props.turns;
+
+  const segments: string[] = [String(props.targetScore)];
+
+  for (const turn of relevantTurns) {
+    if (turn.result.startsWith('BUST_') || turn.result === 'DUPLICATE_PLAYER') {
+      segments.push('\uD83D\uDCA5');
+    } else if (turn.result === 'TIMEOUT') {
+      segments.push('\u23F0');
+    } else if (turn.result === 'CHECKOUT') {
+      segments.push('\u2705');
+    } else {
+      segments.push(String(turn.scoreAfter));
+    }
+  }
+
+  return segments.join('\u2192');
 });
+
+const bustCount = computed(() => {
+  if (!props.turns) return 0;
+  const relevantTurns = isSoloMode.value
+    ? props.turns.filter((t) => t.playerIndex === 0)
+    : props.turns;
+  return relevantTurns.filter((t) => t.result.startsWith('BUST_') || t.result === 'DUPLICATE_PLAYER').length;
+});
+
+const timeoutCount = computed(() => {
+  if (!props.turns) return 0;
+  const relevantTurns = isSoloMode.value
+    ? props.turns.filter((t) => t.playerIndex === 0)
+    : props.turns;
+  return relevantTurns.filter((t) => t.result === 'TIMEOUT').length;
+});
+
+const player1TurnCount = computed(() => {
+  if (!props.turns) return props.turnsTaken;
+  return props.turns.filter((t) => t.playerIndex === 0).length;
+});
+
+// --- 2P match leg summary ---
+
+const legSummaries = computed(() => {
+  if (!props.legs || props.legs.length === 0) return null;
+
+  return props.legs.map((leg, i) => {
+    const p1Turns = leg.turns.filter((t) => t.playerIndex === 0);
+    const p2Turns = leg.turns.filter((t) => t.playerIndex === 1);
+    const p1Busts = p1Turns.filter((t) => t.result.startsWith('BUST_')).length;
+    const p2Busts = p2Turns.filter((t) => t.result.startsWith('BUST_')).length;
+    const checkoutTurn = leg.turns.find((t) => t.result === 'CHECKOUT');
+    const winnerIndex = checkoutTurn?.playerIndex ?? null;
+    const winnerName = winnerIndex === 0 ? (props.player1Name ?? 'Player 1')
+      : winnerIndex === 1 ? (props.player2Name ?? 'Player 2')
+      : null;
+
+    const turnCount = winnerIndex === 0 ? p1Turns.length : p2Turns.length;
+    const bustCountForWinner = winnerIndex === 0 ? p1Busts : p2Busts;
+
+    return {
+      legNumber: i + 1,
+      winnerName,
+      turnCount,
+      bustCount: bustCountForWinner,
+    };
+  });
+});
+
+// --- Share text ---
+
+const shareText = computed(() => {
+  const lines: string[] = [];
+
+  // Header
+  if (props.isDaily) {
+    lines.push(`Footy 501 \uD83C\uDFAF Daily${props.date ? ` - ${props.date}` : ''}`);
+  } else if (!isSoloMode.value && props.matchFormat && props.matchFormat > 1) {
+    lines.push(`Footy 501 \uD83C\uDFAF Best of ${props.matchFormat}`);
+  } else {
+    lines.push('Footy 501 \uD83C\uDFAF');
+  }
+
+  lines.push(props.categoryName);
+  lines.push('');
+
+  // 1P: arrow chain
+  if (isSoloMode.value && arrowChain.value) {
+    lines.push(arrowChain.value);
+    lines.push('');
+    const stats: string[] = [`${player1TurnCount.value} turns`];
+    if (bustCount.value > 0) stats.push(`${bustCount.value} bust${bustCount.value > 1 ? 's' : ''}`);
+    if (timeoutCount.value > 0) stats.push(`${timeoutCount.value} timeout${timeoutCount.value > 1 ? 's' : ''}`);
+    lines.push(stats.join(' | '));
+  }
+  // 2P: leg summaries
+  else if (!isSoloMode.value && legSummaries.value && legSummaries.value.length > 0) {
+    for (const leg of legSummaries.value) {
+      const bustStr = leg.bustCount > 0 ? `, ${leg.bustCount} bust${leg.bustCount > 1 ? 's' : ''}` : '';
+      lines.push(`Leg ${leg.legNumber}: ${leg.winnerName ?? '?'} \u2705 (${leg.turnCount} turns${bustStr})`);
+    }
+
+    if (props.legWins && props.player1Name && props.player2Name) {
+      const winnerName = (props.legWins[0] > props.legWins[1]) ? props.player1Name : props.player2Name;
+      lines.push('');
+      lines.push(`${winnerName} wins ${props.legWins[0]}-${props.legWins[1]}! \uD83C\uDFC6`);
+    }
+  }
+  // Fallback: simple score
+  else {
+    lines.push(`Score: ${props.finalScore} in ${props.turnsTaken} turns`);
+  }
+
+  lines.push('');
+  lines.push('footy501.vercel.app');
+  return lines.join('\n');
+});
+
+// --- Display helpers ---
 
 const displayedFootballers = computed(() => {
   const MAX_SHOWN = 6;
@@ -46,23 +186,7 @@ const displayedFootballers = computed(() => {
   };
 });
 
-const shareText = computed(() => {
-  const lines: string[] = [];
-  if (props.isDaily) {
-    lines.push(`Footy 501 Daily Challenge${props.date ? ` - ${props.date}` : ''}`);
-  } else {
-    lines.push('Footy 501');
-  }
-  lines.push(props.categoryName);
-  lines.push('');
-  lines.push(`Score: ${props.finalScore} in ${props.turnsTaken} turns`);
-  if (props.opponentName != null && props.opponentScore != null) {
-    lines.push(`vs ${props.opponentName}: ${props.opponentScore}`);
-  }
-  lines.push('');
-  lines.push('footy501.vercel.app');
-  return lines.join('\n');
-});
+// --- Canvas rendering ---
 
 function renderCardToCanvas(): HTMLCanvasElement {
   const canvas = document.createElement('canvas');
@@ -70,119 +194,61 @@ function renderCardToCanvas(): HTMLCanvasElement {
   canvas.height = 1000;
   const ctx = canvas.getContext('2d')!;
 
-  // Background
   ctx.fillStyle = '#0A0F0D';
   ctx.fillRect(0, 0, 800, 1000);
 
-  // Subtle gradient overlay at top
   const gradient = ctx.createLinearGradient(0, 0, 0, 200);
   gradient.addColorStop(0, 'rgba(21, 128, 61, 0.15)');
   gradient.addColorStop(1, 'rgba(21, 128, 61, 0)');
   ctx.fillStyle = gradient;
   ctx.fillRect(0, 0, 800, 200);
 
-  // Title
   ctx.textAlign = 'center';
   ctx.fillStyle = '#E2E8F0';
   ctx.font = 'bold 44px sans-serif';
-  ctx.fillText('FOOTY 501', 400, 80);
+  ctx.fillText('FOOTY 501 \uD83C\uDFAF', 400, 80);
 
-  // Football icon (simple circle)
-  ctx.beginPath();
-  ctx.arc(400, 130, 18, 0, Math.PI * 2);
-  ctx.fillStyle = '#22C55E';
-  ctx.fill();
-  ctx.fillStyle = '#0A0F0D';
-  ctx.font = 'bold 20px sans-serif';
-  ctx.fillText('\u26BD', 400, 138);
-
-  // Daily badge
   if (props.isDaily) {
     ctx.fillStyle = '#D97706';
     ctx.font = 'bold 18px sans-serif';
-    const badgeText = `DAILY CHALLENGE${props.date ? ` - ${props.date}` : ''}`;
-    ctx.fillText(badgeText, 400, 180);
+    ctx.fillText(`DAILY CHALLENGE${props.date ? ` - ${props.date}` : ''}`, 400, 130);
   }
 
-  // Category name
   ctx.fillStyle = '#A78BFA';
   ctx.font = 'bold 28px sans-serif';
-  const categoryY = props.isDaily ? 230 : 200;
+  const categoryY = props.isDaily ? 180 : 150;
   ctx.fillText(props.categoryName, 400, categoryY);
 
-  // Divider line
-  const divY = categoryY + 30;
-  ctx.strokeStyle = 'rgba(255, 255, 255, 0.08)';
-  ctx.lineWidth = 1;
-  ctx.beginPath();
-  ctx.moveTo(200, divY);
-  ctx.lineTo(600, divY);
-  ctx.stroke();
+  // Arrow chain or score
+  const chainY = categoryY + 60;
+  if (isSoloMode.value && arrowChain.value) {
+    ctx.fillStyle = '#E2E8F0';
+    ctx.font = 'bold 22px monospace';
+    const chainLines = wrapText(ctx, arrowChain.value, 700);
+    let y = chainY;
+    for (const line of chainLines) {
+      ctx.fillText(line, 400, y);
+      y += 32;
+    }
 
-  // Score box
-  const scoreY = divY + 80;
-  const scoreColor = props.isWinner ? '#22C55E' : '#DC2626';
-
-  // Score box background
-  ctx.fillStyle = 'rgba(255, 255, 255, 0.04)';
-  const boxW = 160;
-  const boxH = 120;
-  const boxX = 400 - boxW / 2;
-  const boxY = scoreY - 70;
-  roundRect(ctx, boxX, boxY, boxW, boxH, 16);
-  ctx.fill();
-
-  // Score border
-  ctx.strokeStyle = scoreColor + '40';
-  ctx.lineWidth = 2;
-  roundRect(ctx, boxX, boxY, boxW, boxH, 16);
-  ctx.stroke();
-
-  // Score number
-  ctx.fillStyle = scoreColor;
-  ctx.font = 'bold 72px monospace';
-  ctx.fillText(String(props.finalScore), 400, scoreY + 10);
-
-  // Turns label
-  ctx.fillStyle = '#94A3B8';
-  ctx.font = '22px sans-serif';
-  ctx.fillText(`in ${props.turnsTaken} turns`, 400, scoreY + 70);
-
-  // Opponent score (if multiplayer)
-  if (props.opponentName != null && props.opponentScore != null) {
     ctx.fillStyle = '#94A3B8';
-    ctx.font = '20px sans-serif';
-    ctx.fillText(`vs ${props.opponentName}: ${props.opponentScore}`, 400, scoreY + 105);
+    ctx.font = '22px sans-serif';
+    const stats: string[] = [`${player1TurnCount.value} turns`];
+    if (bustCount.value > 0) stats.push(`${bustCount.value} bust${bustCount.value > 1 ? 's' : ''}`);
+    ctx.fillText(stats.join(' | '), 400, y + 20);
+  } else {
+    const scoreColor = props.isWinner ? '#22C55E' : '#DC2626';
+    ctx.fillStyle = scoreColor;
+    ctx.font = 'bold 72px monospace';
+    ctx.fillText(String(props.finalScore), 400, chainY + 30);
+
+    ctx.fillStyle = '#94A3B8';
+    ctx.font = '22px sans-serif';
+    ctx.fillText(`in ${props.turnsTaken} turns`, 400, chainY + 70);
   }
 
-  // Performance bar
-  const barBaseY = props.opponentName != null ? scoreY + 140 : scoreY + 120;
-  const barWidth = 360;
-  const barHeight = 16;
-  const barX = 400 - barWidth / 2;
-
-  // Bar background
-  ctx.fillStyle = 'rgba(255, 255, 255, 0.06)';
-  roundRect(ctx, barX, barBaseY, barWidth, barHeight, 8);
-  ctx.fill();
-
-  // Bar fill
-  const fillWidth = Math.max(barWidth * performanceRatio.value, barHeight);
-  ctx.fillStyle = scoreColor;
-  roundRect(ctx, barX, barBaseY, fillWidth, barHeight, 8);
-  ctx.fill();
-
-  // Performance label
-  ctx.fillStyle = '#94A3B8';
-  ctx.font = '16px sans-serif';
-  ctx.fillText(
-    `${props.turnsTaken}/${OPTIMAL_TURNS} optimal - ${performanceLabel.value}`,
-    400,
-    barBaseY + 38,
-  );
-
-  // Footballers section
-  const footballersY = barBaseY + 75;
+  // Footballers
+  const footballersY = 700;
   ctx.fillStyle = '#94A3B8';
   ctx.font = 'bold 16px sans-serif';
   ctx.fillText('FOOTBALLERS NAMED', 400, footballersY);
@@ -191,26 +257,13 @@ function renderCardToCanvas(): HTMLCanvasElement {
   ctx.font = '18px sans-serif';
   const { shown, remaining } = displayedFootballers.value;
   const namesText = shown.join(', ') + (remaining > 0 ? `, +${remaining} more` : '');
-
-  // Word-wrap footballer names
-  const maxLineWidth = 680;
-  const nameLines = wrapText(ctx, namesText, maxLineWidth);
+  const nameLines = wrapText(ctx, namesText, 680);
   let nameY = footballersY + 28;
   for (const line of nameLines) {
     ctx.fillText(line, 400, nameY);
     nameY += 26;
   }
 
-  // Footer divider
-  const footerDivY = 920;
-  ctx.strokeStyle = 'rgba(255, 255, 255, 0.08)';
-  ctx.lineWidth = 1;
-  ctx.beginPath();
-  ctx.moveTo(200, footerDivY);
-  ctx.lineTo(600, footerDivY);
-  ctx.stroke();
-
-  // Footer URL
   ctx.fillStyle = '#94A3B8';
   ctx.font = '18px sans-serif';
   ctx.fillText('footy501.vercel.app', 400, 960);
@@ -218,49 +271,24 @@ function renderCardToCanvas(): HTMLCanvasElement {
   return canvas;
 }
 
-function roundRect(
-  ctx: CanvasRenderingContext2D,
-  x: number,
-  y: number,
-  w: number,
-  h: number,
-  r: number,
-): void {
-  ctx.beginPath();
-  ctx.moveTo(x + r, y);
-  ctx.lineTo(x + w - r, y);
-  ctx.quadraticCurveTo(x + w, y, x + w, y + r);
-  ctx.lineTo(x + w, y + h - r);
-  ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
-  ctx.lineTo(x + r, y + h);
-  ctx.quadraticCurveTo(x, y + h, x, y + h - r);
-  ctx.lineTo(x, y + r);
-  ctx.quadraticCurveTo(x, y, x + r, y);
-  ctx.closePath();
-}
+function wrapText(ctx: CanvasRenderingContext2D, text: string, maxWidth: number): readonly string[] {
+  // For arrow chains, split on arrows to find natural break points
+  const segments = text.split('\u2192');
+  if (segments.length <= 1) return [text];
 
-function wrapText(
-  ctx: CanvasRenderingContext2D,
-  text: string,
-  maxWidth: number,
-): readonly string[] {
-  const words = text.split(' ');
   const lines: string[] = [];
-  let currentLine = '';
+  let currentLine = segments[0]!;
 
-  for (const word of words) {
-    const testLine = currentLine.length > 0 ? `${currentLine} ${word}` : word;
-    const metrics = ctx.measureText(testLine);
-    if (metrics.width > maxWidth && currentLine.length > 0) {
+  for (let i = 1; i < segments.length; i++) {
+    const testLine = `${currentLine}\u2192${segments[i]}`;
+    if (ctx.measureText(testLine).width > maxWidth && currentLine.length > 0) {
       lines.push(currentLine);
-      currentLine = word;
+      currentLine = segments[i]!;
     } else {
       currentLine = testLine;
     }
   }
-  if (currentLine.length > 0) {
-    lines.push(currentLine);
-  }
+  if (currentLine.length > 0) lines.push(currentLine);
   return lines;
 }
 
@@ -308,10 +336,7 @@ async function handleShare(): Promise<void> {
     const file = new File([blob], 'footy501.png', { type: 'image/png' });
 
     if (typeof navigator.canShare === 'function' && navigator.canShare({ files: [file] })) {
-      await navigator.share({
-        text: shareText.value,
-        files: [file],
-      });
+      await navigator.share({ text: shareText.value, files: [file] });
     } else if (typeof navigator.share === 'function') {
       await navigator.share({ text: shareText.value });
     } else {
@@ -320,11 +345,7 @@ async function handleShare(): Promise<void> {
       setTimeout(() => { shareFeedback.value = null; }, 2000);
     }
   } catch (err) {
-    if (err instanceof Error && err.name === 'AbortError') {
-      // User cancelled the share dialog -- not an error
-      return;
-    }
-    // Fallback: try clipboard
+    if (err instanceof Error && err.name === 'AbortError') return;
     try {
       await navigator.clipboard.writeText(shareText.value);
       shareFeedback.value = 'Copied to clipboard!';
@@ -340,93 +361,10 @@ async function handleShare(): Promise<void> {
 </script>
 
 <template>
-  <div class="flex flex-col items-center gap-4">
-    <!-- Visual preview card (HTML/CSS) -->
-    <div
-      class="card-preview w-[400px] h-[500px] rounded-2xl overflow-hidden flex flex-col items-center relative select-none"
-      aria-label="Results card preview"
-    >
-      <!-- Gradient overlay at top -->
-      <div class="absolute inset-x-0 top-0 h-24 bg-gradient-to-b from-primary/15 to-transparent" aria-hidden="true" />
-
-      <!-- Content -->
-      <div class="relative z-10 flex flex-col items-center w-full px-6 py-6 gap-3">
-        <!-- Title -->
-        <h3 class="font-display text-xl font-bold text-text tracking-wide">
-          FOOTY 501
-        </h3>
-
-        <!-- Daily badge -->
-        <span
-          v-if="isDaily"
-          class="text-xs font-bold text-accent uppercase tracking-wider"
-        >
-          Daily Challenge{{ date ? ` - ${date}` : '' }}
-        </span>
-
-        <!-- Category -->
-        <span class="text-sm font-bold text-purple-400 text-center leading-tight">
-          {{ categoryName }}
-        </span>
-
-        <!-- Divider -->
-        <div class="w-32 h-px bg-border" aria-hidden="true" />
-
-        <!-- Score box -->
-        <div
-          class="flex flex-col items-center gap-1 px-6 py-4 rounded-xl"
-          :class="isWinner ? 'bg-success/5 border border-success/20' : 'bg-danger/5 border border-danger/20'"
-        >
-          <span
-            class="font-mono text-5xl font-bold tabular-nums leading-none"
-            :class="isWinner ? 'text-primary-light' : 'text-danger'"
-          >
-            {{ finalScore }}
-          </span>
-        </div>
-
-        <!-- Turns -->
-        <span class="text-sm text-text-muted">
-          in <span class="font-mono font-semibold text-text tabular-nums">{{ turnsTaken }}</span> turns
-        </span>
-
-        <!-- Opponent score -->
-        <span
-          v-if="opponentName != null && opponentScore != null"
-          class="text-xs text-text-muted"
-        >
-          vs {{ opponentName }}: {{ opponentScore }}
-        </span>
-
-        <!-- Performance bar -->
-        <div class="w-full max-w-[280px] flex flex-col gap-1.5 mt-1">
-          <div class="h-2 rounded-full bg-white/[0.06] overflow-hidden">
-            <div
-              class="h-full rounded-full transition-all duration-300"
-              :class="isWinner ? 'bg-primary-light' : 'bg-danger'"
-              :style="{ width: `${performanceRatio * 100}%` }"
-            />
-          </div>
-          <span class="text-[10px] text-text-muted text-center">
-            {{ turnsTaken }}/{{ OPTIMAL_TURNS }} optimal &middot; {{ performanceLabel }}
-          </span>
-        </div>
-
-        <!-- Footballers -->
-        <div class="flex flex-col items-center gap-1 mt-2">
-          <span class="text-[10px] font-bold text-text-muted uppercase tracking-wider">
-            Footballers Named
-          </span>
-          <p class="text-xs text-text text-center leading-relaxed max-w-[320px]">
-            {{ displayedFootballers.shown.join(', ') }}<template v-if="displayedFootballers.remaining > 0">, +{{ displayedFootballers.remaining }} more</template>
-          </p>
-        </div>
-
-        <!-- Footer -->
-        <div class="mt-auto pt-2">
-          <span class="text-[10px] text-text-muted">footy501.vercel.app</span>
-        </div>
-      </div>
+  <div class="flex flex-col items-center gap-4 w-full">
+    <!-- Share text preview -->
+    <div class="w-full max-w-sm bg-bg-elevated/50 border border-border rounded-lg p-4">
+      <pre class="text-xs text-text-muted font-mono whitespace-pre-wrap leading-relaxed text-center">{{ shareText }}</pre>
     </div>
 
     <!-- Actions -->
@@ -466,21 +404,9 @@ async function handleShare(): Promise<void> {
       leave-from-class="opacity-100"
       leave-to-class="opacity-0"
     >
-      <span
-        v-if="shareFeedback"
-        class="text-xs text-text-muted"
-        role="status"
-      >
+      <span v-if="shareFeedback" class="text-xs text-text-muted" role="status">
         {{ shareFeedback }}
       </span>
     </Transition>
   </div>
 </template>
-
-<style scoped>
-.card-preview {
-  background-color: var(--color-bg-deep);
-  border: 1px solid var(--color-border);
-  box-shadow: var(--shadow-elevated);
-}
-</style>
