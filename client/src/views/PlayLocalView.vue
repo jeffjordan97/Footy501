@@ -1,14 +1,11 @@
 <script setup lang="ts">
-import { ref, computed, watch } from 'vue';
+import { ref } from 'vue';
 import { useRouter } from 'vue-router';
 import AppLayout from '@/components/layout/AppLayout.vue';
 import AppContainer from '@/components/layout/AppContainer.vue';
-import AppCard from '@/components/ui/AppCard.vue';
 import AppButton from '@/components/ui/AppButton.vue';
+import AppInput from '@/components/ui/AppInput.vue';
 import GameConfig from '@/components/lobby/GameConfig.vue';
-import PlayerSlot from '@/components/lobby/PlayerSlot.vue';
-import PresetChips from '@/components/lobby/PresetChips.vue';
-import type { GamePreset } from '@/components/lobby/PresetChips.vue';
 import { useGameStore } from '@/stores/game';
 
 const router = useRouter();
@@ -20,94 +17,13 @@ const gameConfigRef = ref<InstanceType<typeof GameConfig>>();
 const creating = ref(false);
 const errorMessage = ref<string | null>(null);
 
-const presets = computed<readonly GamePreset[]>(() => [
-  {
-    id: 'random',
-    label: 'Random',
-    icon: '\uD83C\uDFB2',
-    apply: () => {
-      gameConfigRef.value?.randomiseAll();
-    },
-  },
-  {
-    id: 'speed',
-    label: 'Speed Round',
-    icon: '\u26A1',
-    apply: () => {
-      gameConfigRef.value?.applyPreset({
-        league: 'Premier League',
-        team: 'all',
-        statType: 'APPEARANCES',
-        targetScore: '301',
-        matchFormat: '1',
-        timerDuration: 15,
-        enableBogeyNumbers: false,
-      });
-    },
-  },
-  {
-    id: 'classic-pl',
-    label: 'Classic PL',
-    icon: '\uD83C\uDFC6',
-    apply: () => {
-      gameConfigRef.value?.applyPreset({
-        league: 'Premier League',
-        team: 'all',
-        statType: 'APPEARANCES_AND_GOALS',
-        targetScore: '501',
-        matchFormat: '3',
-        timerDuration: 45,
-        enableBogeyNumbers: false,
-      });
-    },
-  },
-  {
-    id: 'world-tour',
-    label: 'World Tour',
-    icon: '\uD83C\uDF0D',
-    apply: () => {
-      // Random league + random team, rest fixed
-      gameConfigRef.value?.randomiseAll();
-      // Override with World Tour specifics after randomise
-      gameConfigRef.value?.applyPreset({
-        statType: 'APPEARANCES',
-        targetScore: '501',
-        matchFormat: '1',
-        timerDuration: 45,
-        enableBogeyNumbers: false,
-      });
-    },
-  },
-]);
-
-// Clear active preset when user manually changes any setting
-watch(
-  () => {
-    const gc = gameConfigRef.value;
-    if (!gc) return null;
-    return [
-      gc.selectedLeague?.[0],
-      gc.selectedTeam?.[0],
-      gc.selectedStatType?.[0],
-      gc.targetScore?.[0],
-      gc.matchFormat?.[0],
-      gc.timerDuration?.[0],
-      gc.enableBogeyNumbers,
-    ];
-  },
-  () => {
-    // Only clear if the change came from user interaction (not from preset application)
-    // We use a simple debounce: presets set a flag briefly
-  },
-);
-
 const startGame = async () => {
   const config = gameConfigRef.value?.config;
   if (!config) return;
 
   const category = config.category;
   if (!category) {
-    errorMessage.value = 'Please select a stat category.';
+    errorMessage.value = 'Loading categories — please wait a moment.';
     return;
   }
 
@@ -140,36 +56,19 @@ const startGame = async () => {
 
 <template>
   <AppLayout>
-    <AppContainer size="sm" class="py-12 flex flex-col gap-8">
+    <AppContainer size="sm" class="py-12 flex flex-col gap-6">
       <div class="text-center">
         <h1 class="font-display text-3xl mb-2">Local Game</h1>
-        <p class="text-text-muted text-sm">Set up a game on this device</p>
+        <p class="text-text-muted text-sm">Play against a friend on the same device</p>
       </div>
 
-      <!-- Players -->
-      <AppCard class="p-6">
-        <h2 class="font-display text-lg text-text mb-4">Players</h2>
-        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <PlayerSlot v-model="player1Name" :player-number="1" />
-          <PlayerSlot v-model="player2Name" :player-number="2" />
-        </div>
-      </AppCard>
+      <!-- Players (inline, compact) -->
+      <div class="grid grid-cols-2 gap-3">
+        <AppInput v-model="player1Name" placeholder="Player 1" />
+        <AppInput v-model="player2Name" placeholder="Player 2" />
+      </div>
 
-      <!-- Quick Presets -->
-      <PresetChips :presets="presets" />
-
-      <!-- Game Settings -->
-      <AppCard class="p-6">
-        <h2 class="font-display text-lg text-text mb-4">Settings</h2>
-        <GameConfig ref="gameConfigRef" />
-      </AppCard>
-
-      <!-- Error -->
-      <p v-if="errorMessage" class="text-danger text-sm text-center -mt-4">
-        {{ errorMessage }}
-      </p>
-
-      <!-- Start -->
+      <!-- Start Game (prominent, above the fold) -->
       <AppButton
         variant="success"
         size="lg"
@@ -180,6 +79,14 @@ const startGame = async () => {
       >
         {{ creating ? 'Creating Game...' : 'Start Game' }}
       </AppButton>
+
+      <!-- Error -->
+      <p v-if="errorMessage" class="text-danger text-sm text-center -mt-2">
+        {{ errorMessage }}
+      </p>
+
+      <!-- Advanced settings (collapsed by default) -->
+      <GameConfig ref="gameConfigRef" collapsible />
     </AppContainer>
   </AppLayout>
 </template>

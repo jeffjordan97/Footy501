@@ -10,6 +10,7 @@ import AppButton from '@/components/ui/AppButton.vue';
 import AppBadge from '@/components/ui/AppBadge.vue';
 import TurnHistory from '@/components/game/TurnHistory.vue';
 import LegProgress from '@/components/game/LegProgress.vue';
+import AuthNudge from '@/components/auth/AuthNudge.vue';
 
 const route = useRoute();
 const router = useRouter();
@@ -164,6 +165,9 @@ const handleHome = () => {
           Home
         </AppButton>
       </div>
+
+      <!-- Auth nudge -->
+      <AuthNudge message="Sign in to save your match history and track your stats" />
     </AppContainer>
   </AppLayout>
 </template>

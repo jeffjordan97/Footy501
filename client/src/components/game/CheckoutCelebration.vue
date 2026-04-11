@@ -28,6 +28,7 @@ const props = withDefaults(
 defineEmits<{
   continue: [];
   rematch: [];
+  home: [];
 }>();
 
 const showShareCard = ref(false);
@@ -82,7 +83,7 @@ onUnmounted(() => {
   >
     <div
       v-if="visible"
-      class="fixed inset-0 z-50 flex items-center justify-center bg-bg-deep/80 backdrop-blur-sm"
+      class="fixed inset-0 z-50 flex items-center justify-center bg-bg-deep/80 backdrop-blur-sm overflow-y-auto"
       role="dialog"
       aria-modal="true"
       :aria-label="`${winnerName} wins`"
@@ -105,7 +106,7 @@ onUnmounted(() => {
       </div>
 
       <!-- Content -->
-      <div class="relative z-10 text-center flex flex-col items-center gap-6 px-8 py-12 max-w-sm">
+      <div class="relative z-10 text-center flex flex-col items-center gap-6 px-8 py-12 max-w-sm my-auto">
         <!-- Trophy icon -->
         <div class="w-20 h-20 rounded-full bg-warning/20 flex items-center justify-center">
           <svg xmlns="http://www.w3.org/2000/svg" class="w-10 h-10 text-warning" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
@@ -143,6 +144,13 @@ onUnmounted(() => {
             @click="$emit('rematch')"
           >
             {{ isMatchWin ? 'Rematch' : 'Back to Menu' }}
+          </AppButton>
+          <AppButton
+            v-if="isMatchWin"
+            variant="secondary"
+            @click="$emit('home')"
+          >
+            Home
           </AppButton>
         </div>
 

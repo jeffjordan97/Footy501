@@ -15,11 +15,6 @@ const router = createRouter({
       component: () => import('@/views/PlayLocalView.vue'),
     },
     {
-      path: '/play/online',
-      name: 'play-online',
-      component: () => import('@/views/PlayOnlineView.vue'),
-    },
-    {
       path: '/play/daily',
       name: 'play-daily',
       component: () => import('@/views/PlayDailyView.vue'),
@@ -35,8 +30,6 @@ const router = createRouter({
       component: () => import('@/views/GameView.vue'),
       beforeEnter: async (to) => {
         const gameId = to.params.id as string;
-        // Skip server validation for online games (socket delivers state)
-        if (to.query.mode === 'online') return true;
         // Validate format
         if (!/^[a-f0-9-]{8,36}$/i.test(gameId)) {
           return { name: 'home' };

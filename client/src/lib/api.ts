@@ -25,6 +25,19 @@ export async function getPlayersForCategory(
   return request<{ players: PlayerWithStat[] }>(`/players/category?${params}`);
 }
 
+export async function searchPlayersInCategory(
+  query: string,
+  league: string,
+  teamId?: string,
+  statType?: string,
+  limit = 15,
+) {
+  const params = new URLSearchParams({ q: query, league, limit: String(limit) });
+  if (teamId) params.set('teamId', teamId);
+  if (statType) params.set('statType', statType);
+  return request<{ players: PlayerWithStat[] }>(`/players/search-category?${params}`);
+}
+
 // Category APIs
 export async function getCategories() {
   return request<{ categories: StatCategoryOption[] }>('/categories');

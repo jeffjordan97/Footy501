@@ -43,6 +43,52 @@ export async function searchPlayers(
 }
 
 /**
+ * Search players by name within a specific category (league/team/statType).
+ * Returns matching players with their stat values, ordered by stat descending.
+ */
+export async function searchPlayersInCategory(
+  query: string,
+  league: string,
+  teamId?: string,
+  statType?: string,
+  limit = 15,
+): Promise<readonly PlayerWithStat[]> {
+  const pattern = `%${query}%`;
+  const statExpression = buildStatExpression(statType);
+
+  const conditions = [
+    ilike(players.normalizedName, pattern),
+    eq(teams.league, league),
+  ];
+
+  if (teamId) {
+    conditions.push(eq(playerStats.teamId, teamId));
+  }
+
+  const results = await db
+    .select({
+      id: players.id,
+      name: players.name,
+      nationality: players.nationality,
+      position: players.position,
+      statValue: statExpression,
+    })
+    .from(playerStats)
+    .innerJoin(players, eq(playerStats.playerId, players.id))
+    .innerJoin(teams, eq(playerStats.teamId, teams.id))
+    .where(and(...conditions))
+    .groupBy(players.id, players.name, players.nationality, players.position)
+    .orderBy(sql`${statExpression} desc`)
+    .limit(limit);
+
+  return results.map((row) => ({
+    ...row,
+    teamName: '',
+    statValue: Number(row.statValue),
+  }));
+}
+
+/**
  * Get a player's stat value for a specific category.
  * Sums the relevant stat column based on statType, filtered by league and optionally by team.
  */

@@ -49,6 +49,8 @@ const isPlayer1 = computed(() => props.playerNumber === 1);
       {{ displayedScore }}
     </span>
 
+    <slot />
+
     <!-- Progress bar with pitch-line markers -->
     <div class="w-full relative">
       <div class="w-full h-1 bg-bg-elevated rounded-full overflow-hidden">

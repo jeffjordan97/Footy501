@@ -281,41 +281,8 @@ export const determineLegWinner = (state: MatchState): MatchState => {
     return state;
   }
 
-  const playerIndex = lastTurn.playerIndex;
-
-  // Player 0 checks out in normal play: enter CLOSE_FINISH, give player 1 a chance
-  if (playerIndex === 0 && leg.phase === LegPhase.PLAYING) {
-    const updatedLeg = updateLeg(leg, {
-      phase: LegPhase.CLOSE_FINISH,
-      closeFinishCheckoutScore: leg.players[0].score,
-      currentPlayerIndex: 1,
-    });
-    return updateMatchLeg(state, updatedLeg);
-  }
-
-  // Player 1 checks out during CLOSE_FINISH: compare scores
-  if (playerIndex === 1 && leg.phase === LegPhase.CLOSE_FINISH) {
-    const score0 = leg.players[0].score;
-    const score1 = leg.players[1].score;
-
-    // Closer to 0 wins; if tied, player who checked out first (player 0) wins
-    const legWinner: 0 | 1 =
-      Math.abs(score1) < Math.abs(score0) ? 1 : 0;
-
-    return finalizeLegWin(state, legWinner);
-  }
-
-  // Player 1 checks out in normal play: player 1 wins the leg
-  if (playerIndex === 1 && leg.phase === LegPhase.PLAYING) {
-    return finalizeLegWin(state, 1);
-  }
-
-  // Player 0 checks out during CLOSE_FINISH (shouldn't normally happen, but handle it)
-  if (playerIndex === 0 && leg.phase === LegPhase.CLOSE_FINISH) {
-    return finalizeLegWin(state, 0);
-  }
-
-  return state;
+  // Whoever checks out wins the leg immediately
+  return finalizeLegWin(state, lastTurn.playerIndex);
 };
 
 const finalizeLegWin = (state: MatchState, legWinner: 0 | 1): MatchState => {

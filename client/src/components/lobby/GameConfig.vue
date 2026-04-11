@@ -7,7 +7,17 @@ import AppSwitch from '@/components/ui/AppSwitch.vue';
 import { useCategoriesStore } from '@/stores/categories';
 import type { StatCategoryOption } from '@/lib/api';
 
+const props = withDefaults(defineProps<{
+  /** When true, settings are hidden behind an "Advanced Settings" toggle */
+  collapsible?: boolean;
+}>(), {
+  collapsible: false,
+});
+
 const categoriesStore = useCategoriesStore();
+
+// Whether the advanced settings panel is expanded
+const expanded = ref(false);
 
 // Category selection (step-by-step)
 const selectedLeague = ref<string[]>([]);
@@ -80,6 +90,21 @@ watch(selectedLeague, () => {
   selectedTeam.value.splice(0, selectedTeam.value.length, 'all');
 });
 
+// Auto-select first league (Premier League preferred) once categories load
+watch(
+  () => leagueOptions.value,
+  (options) => {
+    if (options.length > 0 && !selectedLeague.value[0]) {
+      // Prefer Premier League if available, otherwise first option
+      const premierLeague = options.find(
+        (o) => o.label.toLowerCase().includes('premier league'),
+      );
+      setArkValue(selectedLeague, premierLeague?.value ?? options[0].value);
+    }
+  },
+  { immediate: true },
+);
+
 // Pick a random team from the current league
 function selectRandomTeam(): void {
   const teams = teamOptions.value.filter((t) => t.value !== 'all');
@@ -101,7 +126,6 @@ function weightedPick<T>(options: readonly { value: T; weight: number }[]): T {
 
 // Randomise all settings
 function randomiseAll(): void {
-  // Trigger shake animation
   isShaking.value = true;
   setTimeout(() => {
     isShaking.value = false;
@@ -110,14 +134,9 @@ function randomiseAll(): void {
   const leagues = leagueOptions.value;
   if (leagues.length === 0) return;
 
-  // Random league
   const randomLeague = leagues[Math.floor(Math.random() * leagues.length)];
   setArkValue(selectedLeague, randomLeague.value);
 
-  // Wait one tick for teamOptions to recompute, then pick team
-  // Since Vue reactivity is synchronous for computed, teamOptions updates immediately
-  // after selectedLeague changes (and the watcher resets team to 'all').
-  // We need to pick after the watcher fires.
   const teamsForLeague = (() => {
     const teams = new Map<string, string>();
     for (const cat of categoriesStore.categories) {
@@ -128,7 +147,6 @@ function randomiseAll(): void {
     return Array.from(teams.entries()).map(([id, name]) => ({ value: id, label: name }));
   })();
 
-  // 30% chance of "all", 70% chance of specific team
   if (teamsForLeague.length > 0 && Math.random() > 0.3) {
     const randomTeam = teamsForLeague[Math.floor(Math.random() * teamsForLeague.length)];
     setArkValue(selectedTeam, randomTeam.value);
@@ -136,11 +154,9 @@ function randomiseAll(): void {
     setArkValue(selectedTeam, 'all');
   }
 
-  // Random stat type
   const statTypes = [...statTypeOptions];
   setArkValue(selectedStatType, statTypes[Math.floor(Math.random() * statTypes.length)].value);
 
-  // Weighted target score: 501 70%, 301 15%, 701 10%, 1001 5%
   setArkValue(targetScore, weightedPick([
     { value: '501', weight: 70 },
     { value: '301', weight: 15 },
@@ -148,22 +164,18 @@ function randomiseAll(): void {
     { value: '1001', weight: 5 },
   ]));
 
-  // Weighted match format: Best of 1: 30%, Best of 3: 50%, Best of 5: 20%
   setArkValue(matchFormat, weightedPick([
     { value: '1', weight: 30 },
     { value: '3', weight: 50 },
     { value: '5', weight: 20 },
   ]));
 
-  // Random timer between 30-45s in 5s steps
   const timerSteps = [30, 35, 40, 45];
   setArkNumValue(timerDuration, timerSteps[Math.floor(Math.random() * timerSteps.length)]);
 
-  // 20% chance of bogey numbers
   enableBogeyNumbers.value = Math.random() < 0.2;
 }
 
-// Helper: update an Ark UI bound array in-place so the component sees the change.
 function setArkValue(target: { value: string[] }, newVal: string): void {
   target.value.splice(0, target.value.length, newVal);
 }
@@ -172,7 +184,6 @@ function setArkNumValue(target: { value: number[] }, newVal: number): void {
   target.value.splice(0, target.value.length, newVal);
 }
 
-// Apply a preset configuration
 async function applyPreset(preset: {
   league?: string;
   team?: string;
@@ -182,12 +193,10 @@ async function applyPreset(preset: {
   timerDuration?: number;
   enableBogeyNumbers?: boolean;
 }): Promise<void> {
-  // Set league first — the watcher will reset team to ['all']
   if (preset.league !== undefined) {
     setArkValue(selectedLeague, preset.league);
   }
 
-  // Wait for the league watcher to fire and reset team before overriding
   await nextTick();
 
   if (preset.team !== undefined) {
@@ -209,6 +218,25 @@ async function applyPreset(preset: {
     enableBogeyNumbers.value = preset.enableBogeyNumbers;
   }
 }
+
+// Summary of current settings for the collapsed view
+const settingsSummary = computed(() => {
+  const league = leagueOptions.value.find((l) => l.value === selectedLeague.value[0]);
+  const team = selectedTeam.value[0] !== 'all'
+    ? teamOptions.value.find((t) => t.value === selectedTeam.value[0])?.label
+    : null;
+  const stat = statTypeOptions.find((s) => s.value === selectedStatType.value[0])?.label ?? 'Appearances';
+
+  const parts = [league?.label ?? 'Loading...'];
+  if (team) parts.push(team);
+  parts.push(stat);
+  parts.push(`${targetScore.value[0]} pts`);
+  parts.push(`Best of ${matchFormat.value[0]}`);
+  parts.push(`${timerDuration.value[0]}s`);
+  if (enableBogeyNumbers.value) parts.push('Bogey');
+
+  return parts.join(' \u00B7 ');
+});
 
 // Resolve the final StatCategoryOption from the three selections
 const selectedCategory = computed<StatCategoryOption | null>(() => {
@@ -255,110 +283,146 @@ defineExpose({
 
 <template>
   <div class="flex flex-col gap-5">
-    <!-- Randomise All button -->
-    <button
-      type="button"
-      class="randomise-btn w-full inline-flex items-center justify-center gap-2.5 font-body font-semibold text-base rounded-lg px-5 py-3 bg-bg-elevated text-text border border-border hover:bg-bg-card transition-colors duration-150 cursor-pointer focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 focus:ring-offset-bg-deep select-none"
-      :class="{ 'animate-wobble': isShaking }"
-      :disabled="categoriesStore.loading || leagueOptions.length === 0"
-      @click="randomiseAll"
-    >
-      <svg
-        xmlns="http://www.w3.org/2000/svg"
-        class="w-5 h-5"
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        stroke-width="2"
-        stroke-linecap="round"
-        stroke-linejoin="round"
-        aria-hidden="true"
-      >
-        <rect x="2" y="2" width="8" height="8" rx="1.5" />
-        <circle cx="4.5" cy="4.5" r="0.75" fill="currentColor" stroke="none" />
-        <circle cx="7.5" cy="7.5" r="0.75" fill="currentColor" stroke="none" />
-        <rect x="14" y="14" width="8" height="8" rx="1.5" />
-        <circle cx="16.5" cy="16.5" r="0.75" fill="currentColor" stroke="none" />
-        <circle cx="19.5" cy="19.5" r="0.75" fill="currentColor" stroke="none" />
-        <circle cx="18" cy="18" r="0.75" fill="currentColor" stroke="none" />
-        <path d="M16 3h5v5" />
-        <path d="M21 3l-7 7" />
-        <path d="M16 21h5v-5" />
-      </svg>
-      Randomise All
-    </button>
-
-    <!-- Step 1: League -->
-    <AppSelect
-      v-model="selectedLeague"
-      :items="leagueOptions"
-      :loading="categoriesStore.loading"
-      label="League"
-      placeholder="Select league..."
-    />
-
-    <!-- Step 2: Team (visible once a league is chosen) -->
-    <div v-if="selectedLeague.length > 0 && selectedLeague[0]" class="flex items-end gap-2">
-      <div class="flex-1">
-        <AppSelect
-          v-model="selectedTeam"
-          :items="teamOptions"
-          label="Team"
-          placeholder="Select team..."
-        />
+    <!-- Collapsed summary + toggle (when collapsible) -->
+    <template v-if="collapsible && !expanded">
+      <div class="flex flex-col gap-3">
+        <p class="text-text-muted text-xs leading-relaxed">
+          {{ settingsSummary }}
+        </p>
+        <button
+          type="button"
+          class="inline-flex items-center gap-1.5 text-sm text-primary-light hover:text-primary transition-colors cursor-pointer self-start"
+          @click="expanded = true"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" />
+            <circle cx="12" cy="12" r="3" />
+          </svg>
+          Advanced Settings
+        </button>
       </div>
-      <AppButton
-        variant="secondary"
-        size="md"
-        :disabled="teamOptions.length <= 1"
-        @click="selectRandomTeam"
+    </template>
+
+    <!-- Full settings (always shown if not collapsible, or when expanded) -->
+    <template v-if="!collapsible || expanded">
+      <!-- Collapse button when in expanded collapsible mode -->
+      <button
+        v-if="collapsible"
+        type="button"
+        class="inline-flex items-center gap-1.5 text-sm text-text-muted hover:text-text transition-colors cursor-pointer self-start -mb-2"
+        @click="expanded = false"
       >
-        Random
-      </AppButton>
-    </div>
+        <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="m18 15-6-6-6 6" />
+        </svg>
+        Hide Settings
+      </button>
 
-    <!-- Step 3: Stat Type -->
-    <AppSelect
-      v-if="selectedLeague.length > 0 && selectedLeague[0]"
-      v-model="selectedStatType"
-      :items="statTypeOptions"
-      label="Stat Type"
-      placeholder="Select stat..."
-    />
+      <!-- Randomise All button -->
+      <button
+        type="button"
+        class="randomise-btn w-full inline-flex items-center justify-center gap-2.5 font-body font-semibold text-base rounded-lg px-5 py-3 bg-bg-elevated text-text border border-border hover:bg-bg-card transition-colors duration-150 cursor-pointer focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 focus:ring-offset-bg-deep select-none"
+        :class="{ 'animate-wobble': isShaking }"
+        :disabled="categoriesStore.loading || leagueOptions.length === 0"
+        @click="randomiseAll"
+      >
+        <svg
+          xmlns="http://www.w3.org/2000/svg"
+          class="w-5 h-5"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          aria-hidden="true"
+        >
+          <rect x="2" y="2" width="8" height="8" rx="1.5" />
+          <circle cx="4.5" cy="4.5" r="0.75" fill="currentColor" stroke="none" />
+          <circle cx="7.5" cy="7.5" r="0.75" fill="currentColor" stroke="none" />
+          <rect x="14" y="14" width="8" height="8" rx="1.5" />
+          <circle cx="16.5" cy="16.5" r="0.75" fill="currentColor" stroke="none" />
+          <circle cx="19.5" cy="19.5" r="0.75" fill="currentColor" stroke="none" />
+          <circle cx="18" cy="18" r="0.75" fill="currentColor" stroke="none" />
+          <path d="M16 3h5v5" />
+          <path d="M21 3l-7 7" />
+          <path d="M16 21h5v-5" />
+        </svg>
+        Randomise All
+      </button>
 
-    <p v-if="categoriesStore.error" class="text-danger text-sm">
-      Failed to load categories. Please try again.
-    </p>
+      <!-- Step 1: League -->
+      <AppSelect
+        v-model="selectedLeague"
+        :items="leagueOptions"
+        :loading="categoriesStore.loading"
+        label="League"
+        placeholder="Select league..."
+      />
 
-    <!-- Game settings -->
-    <AppSelect
-      v-model="targetScore"
-      :items="targetScoreOptions"
-      label="Target Score"
-      placeholder="Select target..."
-    />
+      <!-- Step 2: Team (visible once a league is chosen) -->
+      <div v-if="selectedLeague.length > 0 && selectedLeague[0]" class="flex items-end gap-2">
+        <div class="flex-1">
+          <AppSelect
+            v-model="selectedTeam"
+            :items="teamOptions"
+            label="Team"
+            placeholder="Select team..."
+          />
+        </div>
+        <AppButton
+          variant="secondary"
+          size="md"
+          :disabled="teamOptions.length <= 1"
+          @click="selectRandomTeam"
+        >
+          Random
+        </AppButton>
+      </div>
 
-    <AppSelect
-      v-model="matchFormat"
-      :items="matchFormatOptions"
-      label="Match Format"
-      placeholder="Select format..."
-    />
+      <!-- Step 3: Stat Type -->
+      <AppSelect
+        v-if="selectedLeague.length > 0 && selectedLeague[0]"
+        v-model="selectedStatType"
+        :items="statTypeOptions"
+        label="Stat Type"
+        placeholder="Select stat..."
+      />
 
-    <AppSlider
-      v-model="timerDuration"
-      :min="15"
-      :max="60"
-      :step="5"
-      label="Timer Duration"
-      unit="s"
-    />
+      <p v-if="categoriesStore.error" class="text-danger text-sm">
+        Failed to load categories. Please try again.
+      </p>
 
-    <AppSwitch
-      v-model="enableBogeyNumbers"
-      label="Bogey Numbers"
-      description="Landing on a bogey number triggers an automatic bust"
-    />
+      <!-- Game settings -->
+      <AppSelect
+        v-model="targetScore"
+        :items="targetScoreOptions"
+        label="Target Score"
+        placeholder="Select target..."
+      />
+
+      <AppSelect
+        v-model="matchFormat"
+        :items="matchFormatOptions"
+        label="Match Format"
+        placeholder="Select format..."
+      />
+
+      <AppSlider
+        v-model="timerDuration"
+        :min="15"
+        :max="60"
+        :step="5"
+        label="Timer Duration"
+        unit="s"
+      />
+
+      <AppSwitch
+        v-model="enableBogeyNumbers"
+        label="Bogey Numbers"
+        description="Landing on a bogey number triggers an automatic bust"
+      />
+    </template>
   </div>
 </template>
 

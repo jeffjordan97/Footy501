@@ -1,5 +1,5 @@
 import { Router, type Router as RouterType } from 'express';
-import { searchPlayers, getPlayersForCategory } from '../services/player-service.js';
+import { searchPlayers, searchPlayersInCategory, getPlayersForCategory } from '../services/player-service.js';
 
 const router: RouterType = Router();
 
@@ -23,6 +23,38 @@ router.get('/search', async (req, res) => {
     res.json({ players });
   } catch (error) {
     console.error('Player search failed:', error);
+    res.status(500).json({ error: 'Failed to search players' });
+  }
+});
+
+// GET /api/players/search-category?q=rooney&league=Premier+League&statType=GOALS&limit=15
+router.get('/search-category', async (req, res) => {
+  const query = req.query.q as string | undefined;
+  const league = req.query.league as string | undefined;
+  const teamId = req.query.teamId as string | undefined;
+  const statType = req.query.statType as string | undefined;
+  const limit = req.query.limit ? parseInt(req.query.limit as string, 10) : undefined;
+
+  if (!query || query.length < 1) {
+    res.status(400).json({ error: 'Query is required' });
+    return;
+  }
+
+  if (!league) {
+    res.status(400).json({ error: 'League is required' });
+    return;
+  }
+
+  if (limit !== undefined && (isNaN(limit) || limit < 1 || limit > 50)) {
+    res.status(400).json({ error: 'Limit must be between 1 and 50' });
+    return;
+  }
+
+  try {
+    const players = await searchPlayersInCategory(query, league, teamId, statType, limit);
+    res.json({ players });
+  } catch (error) {
+    console.error('Search players in category failed:', error);
     res.status(500).json({ error: 'Failed to search players' });
   }
 });

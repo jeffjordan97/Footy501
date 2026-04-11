@@ -11,6 +11,7 @@ import DailyCountdown from '@/components/daily/DailyCountdown.vue';
 import DailyLeaderboard from '@/components/daily/DailyLeaderboard.vue';
 import type { LeaderboardEntry } from '@/components/daily/DailyLeaderboard.vue';
 import { useAuthStore } from '@/stores/auth';
+import AuthNudge from '@/components/auth/AuthNudge.vue';
 import {
   getDailyChallenge,
   getDailyLeaderboard,
@@ -194,6 +195,9 @@ const startDaily = async () => {
         <span class="text-xs text-text-muted uppercase tracking-wider">Next challenge in</span>
         <DailyCountdown />
       </AppCard>
+
+      <!-- Auth nudge -->
+      <AuthNudge message="Sign in to appear on the leaderboard and save your daily streak" />
 
       <!-- Leaderboard -->
       <AppCard class="p-4">

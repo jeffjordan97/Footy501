@@ -16,7 +16,7 @@ defineProps<{
   player2Name: string;
 }>();
 
-const expanded = ref(false);
+const expanded = ref(true);
 
 const resultBadge = (result: string): { label: string; variant: 'success' | 'danger' | 'warning' | 'muted' } => {
   switch (result) {

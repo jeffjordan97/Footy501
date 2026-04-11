@@ -124,6 +124,10 @@ export const useGameStore = defineStore('game', () => {
     return state.value.currentLegIndex + 1;
   });
 
+  const categoryLeague = computed(() => _categoryLeague.value);
+  const categoryTeamId = computed(() => _categoryTeamId.value);
+  const categoryStatType = computed(() => _categoryStatType.value);
+
   // --- Actions ---
 
   async function loadGame(id: string): Promise<void> {
@@ -450,6 +454,9 @@ export const useGameStore = defineStore('game', () => {
     winner,
     targetScore,
     currentLegNumber,
+    categoryLeague,
+    categoryTeamId,
+    categoryStatType,
 
     // Actions
     loadGame,

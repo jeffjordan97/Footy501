@@ -8,15 +8,11 @@ import AppContainer from '@/components/layout/AppContainer.vue';
 import AppCard from '@/components/ui/AppCard.vue';
 import AppButton from '@/components/ui/AppButton.vue';
 import ScoreBoard from '@/components/game/ScoreBoard.vue';
-import TurnIndicator from '@/components/game/TurnIndicator.vue';
-import PlayerSearch from '@/components/game/PlayerSearch.vue';
+import PlayerSearch, { type PlayerOption } from '@/components/game/PlayerSearch.vue';
 import TurnHistory from '@/components/game/TurnHistory.vue';
-import LegProgress from '@/components/game/LegProgress.vue';
-import StatCategory from '@/components/game/StatCategory.vue';
 import CheckoutCelebration from '@/components/game/CheckoutCelebration.vue';
 import BustNotification from '@/components/game/BustNotification.vue';
 import AnswerReveal from '@/components/game/AnswerReveal.vue';
-import type { PlayerOption } from '@/components/game/PlayerSearch.vue';
 
 const route = useRoute();
 const router = useRouter();
@@ -28,7 +24,6 @@ const {
   loading,
   error,
   lastTurnResult,
-  categoryPlayers,
   player1Name,
   player2Name,
   categoryName,
@@ -37,7 +32,6 @@ const {
   activePlayerIndex,
   activePlayerName,
   legWins,
-  matchFormat,
   timerDuration,
   turns,
   usedPlayerIds,
@@ -45,8 +39,10 @@ const {
   legPhase,
   winner,
   targetScore,
-  currentLegNumber,
   opponentConnected,
+  categoryLeague,
+  categoryTeamId,
+  categoryStatType,
 } = storeToRefs(gameStore);
 
 // --- Local UI state ---
@@ -58,6 +54,17 @@ const bustReason = ref('');
 const bustPlayerName = ref('');
 const errorMessage = ref<string | null>(null);
 let errorDismissTimer: ReturnType<typeof setTimeout> | null = null;
+
+// --- Answer toast state ---
+
+interface AnswerToast {
+  readonly playerName: string;
+  readonly statValue: number;
+  readonly scoreDiff: number;
+}
+
+const answerToast = ref<AnswerToast | null>(null);
+let answerToastTimer: ReturnType<typeof setTimeout> | null = null;
 
 // --- Answer Reveal state ---
 
@@ -75,16 +82,6 @@ interface RevealData {
 const revealData = ref<RevealData | null>(null);
 
 // --- Computed ---
-
-const availablePlayers = computed<readonly PlayerOption[]>(() =>
-  categoryPlayers.value
-    .map((p) => ({
-      id: p.id,
-      name: p.name,
-      position: p.position ?? 'Unknown',
-      nationality: p.nationality ?? 'Unknown',
-    })),
-);
 
 const isLegFinished = computed(() => legPhase.value === 'FINISHED');
 const isMatchFinished = computed(() => matchPhase.value === 'FINISHED');
@@ -112,8 +109,6 @@ const footballersNamed = computed(() =>
     .filter((t): t is typeof t & { footballerName: string } => t.footballerName != null)
     .map((t) => t.footballerName),
 );
-
-const isCloseFinish = computed(() => legPhase.value === 'CLOSE_FINISH');
 
 const isPlayerInputDisabled = computed(() =>
   submitting.value || isLegFinished.value || isMatchFinished.value,
@@ -167,29 +162,6 @@ const nearMissInfo = computed<{
   return null;
 });
 
-// --- Category info (derived from store's categoryName for display) ---
-// The store exposes categoryName; for StatCategory component we need league/team/statType.
-// These are available from the match state config when loaded. We'll derive from
-// the state if available, or fall back to the category name.
-const statCategoryDisplay = computed(() => {
-  const state = gameStore.state;
-  if (state) {
-    const config = state.config as Record<string, unknown>;
-    return {
-      name: categoryName.value,
-      league: (config.statCategory as Record<string, unknown>)?.league as string ?? '',
-      team: (config.statCategory as Record<string, unknown>)?.team as string | null ?? null,
-      statType: (config.statCategory as Record<string, unknown>)?.statType as string ?? '',
-    };
-  }
-  return {
-    name: categoryName.value,
-    league: '',
-    team: null,
-    statType: '',
-  };
-});
-
 // --- Lifecycle ---
 
 onMounted(async () => {
@@ -201,6 +173,7 @@ onMounted(async () => {
 
 onUnmounted(() => {
   if (errorDismissTimer) clearTimeout(errorDismissTimer);
+  if (answerToastTimer) clearTimeout(answerToastTimer);
   gameStore.disconnectFromGame();
 });
 
@@ -243,9 +216,6 @@ const handlePlayerSelect = async (player: PlayerOption) => {
     ? player1Score.value
     : player2Score.value;
 
-  // Find full player info for nationality/position
-  const fullPlayer = categoryPlayers.value.find((p) => p.id === player.id);
-
   try {
     await gameStore.submitPlayerAnswer(player.id, player.name);
 
@@ -265,17 +235,37 @@ const handlePlayerSelect = async (player: PlayerOption) => {
         : null;
       const newScore = latestTurn?.scoreAfter ?? oldScore;
 
-      // Show the answer reveal overlay
-      revealData.value = {
-        footballerName: player.name,
-        nationality: fullPlayer?.nationality ?? null,
-        position: fullPlayer?.position ?? null,
-        statValue: result.statValue ?? 0,
-        oldScore,
-        newScore,
-        turnResult: result.result,
-        bustMessage: result.bustMessage,
-      };
+      // Show modal only for CHECKOUT; use toasts for VALID and BUST
+      if (result.result === 'CHECKOUT') {
+        revealData.value = {
+          footballerName: player.name,
+          nationality: player.nationality ?? null,
+          position: player.position ?? null,
+          statValue: result.statValue ?? 0,
+          oldScore,
+          newScore,
+          turnResult: result.result,
+          bustMessage: result.bustMessage,
+        };
+      } else {
+        // Show answer toast for valid plays
+        if (result.result === 'VALID') {
+          if (answerToastTimer) clearTimeout(answerToastTimer);
+          answerToast.value = {
+            playerName: player.name,
+            statValue: result.statValue ?? 0,
+            scoreDiff: oldScore - newScore,
+          };
+          answerToastTimer = setTimeout(() => {
+            answerToast.value = null;
+          }, 2500);
+        }
+        // Resume immediately (busts handled by bust watcher)
+        submitting.value = false;
+        if (!isLegFinished.value && !isMatchFinished.value) {
+          timerRunning.value = true;
+        }
+      }
     }
   } catch (err) {
     console.error('[GameView] handlePlayerSelect error:', err);
@@ -401,46 +391,10 @@ const handleGoHome = () => {
         </div>
       </Transition>
 
-      <!-- Close finish banner -->
-      <Transition
-        enter-active-class="transition-all duration-200 ease-[var(--ease-out)]"
-        enter-from-class="opacity-0 -translate-y-2"
-        enter-to-class="opacity-100 translate-y-0"
-        leave-active-class="transition-all duration-150 ease-[var(--ease-in)]"
-        leave-from-class="opacity-100 translate-y-0"
-        leave-to-class="opacity-0 -translate-y-2"
-      >
-        <div
-          v-if="isCloseFinish"
-          role="status"
-          class="bg-warning/10 border border-warning/30 rounded-xl px-5 py-3 flex items-center gap-3"
-        >
-          <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 text-warning shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126z" />
-          </svg>
-          <span class="text-sm font-semibold text-warning">
-            Close Finish! {{ activePlayerName }} gets one final turn
-          </span>
-        </div>
-      </Transition>
-
-      <!-- Category & Leg info (compact inline) -->
-      <div class="flex items-center justify-between gap-4">
-        <StatCategory
-          :name="statCategoryDisplay.name"
-          :league="statCategoryDisplay.league"
-          :team="statCategoryDisplay.team"
-          :stat-type="statCategoryDisplay.statType"
-        />
-        <LegProgress
-          :match-format="matchFormat"
-          :leg-wins="legWins"
-          :current-leg="currentLegNumber"
-        />
-      </div>
-
-      <!-- Oche line separator -->
-      <div class="h-px bg-border" aria-hidden="true" />
+      <!-- Game header: category name -->
+      <h2 class="font-display text-base font-bold text-text text-center">
+        {{ categoryName }}
+      </h2>
 
       <!-- Scoreboard (dominant) -->
       <ScoreBoard
@@ -451,6 +405,9 @@ const handleGoHome = () => {
         :active-player="activePlayerIndex"
         :leg-wins="legWins"
         :target-score="targetScore"
+        :timer-duration="timerDuration"
+        :timer-running="timerRunning && !isPlayerInputDisabled"
+        @timeout="handleTimeout"
       />
 
       <!-- Near-miss checkout feedback -->
@@ -475,21 +432,11 @@ const handleGoHome = () => {
         </div>
       </Transition>
 
-      <!-- Turn indicator with timer -->
-      <TurnIndicator
-        :player-name="activePlayerName"
-        :player-index="activePlayerIndex"
-        :timer-duration="timerDuration"
-        :timer-running="timerRunning && !isPlayerInputDisabled"
-        :category-name="categoryName"
-        :leg-number="currentLegNumber"
-        :total-legs="matchFormat"
-        @timeout="handleTimeout"
-      />
-
       <!-- Player search (primary action area — no card wrapper) -->
       <PlayerSearch
-        :players="availablePlayers"
+        :league="categoryLeague"
+        :team-id="categoryTeamId"
+        :stat-type="categoryStatType"
         :used-player-ids="usedPlayerIds"
         :disabled="isPlayerInputDisabled"
         @select="handlePlayerSelect"
@@ -566,6 +513,7 @@ const handleGoHome = () => {
         :footballers-named="footballersNamed"
         @continue="handleContinue"
         @rematch="handleRematch"
+        @home="handleGoHome"
       />
 
       <!-- Answer reveal overlay -->
@@ -581,6 +529,36 @@ const handleGoHome = () => {
         :bust-message="revealData.bustMessage"
         @dismiss="handleRevealDismiss"
       />
+
+      <!-- Valid answer toast -->
+      <Transition
+        enter-active-class="transition-all duration-300 ease-[var(--ease-out)]"
+        enter-from-class="-translate-y-full opacity-0"
+        enter-to-class="translate-y-0 opacity-100"
+        leave-active-class="transition-all duration-200 ease-[var(--ease-in)]"
+        leave-from-class="translate-y-0 opacity-100"
+        leave-to-class="-translate-y-full opacity-0"
+      >
+        <div
+          v-if="answerToast"
+          role="status"
+          class="fixed top-4 left-1/2 -translate-x-1/2 z-50 max-w-sm w-full mx-4"
+        >
+          <div class="bg-bg-card border border-success/40 shadow-elevated rounded-xl px-5 py-4 flex items-start gap-3">
+            <div class="w-8 h-8 rounded-full bg-success/20 flex items-center justify-center shrink-0 mt-0.5">
+              <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 text-success" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M4.5 12.75l6 6 9-13.5" />
+              </svg>
+            </div>
+            <div class="flex flex-col gap-0.5 min-w-0">
+              <span class="text-sm font-semibold text-success">{{ answerToast.playerName }}</span>
+              <span class="text-sm text-text-muted">
+                Stat: {{ answerToast.statValue }} &mdash; <span class="text-success font-mono">-{{ answerToast.scoreDiff }}</span>
+              </span>
+            </div>
+          </div>
+        </div>
+      </Transition>
 
       <!-- Bust notification -->
       <BustNotification
