@@ -2,20 +2,41 @@
 import { onMounted } from 'vue';
 import { useRouter, useRoute } from 'vue-router';
 import { useAuthStore } from '@/stores/auth';
+import { API_BASE } from '@/lib/api';
 
 const router = useRouter();
 const route = useRoute();
 const authStore = useAuthStore();
 
 onMounted(async () => {
-  const token = route.query.token as string | undefined;
+  const code = route.query.code as string | undefined;
+  const error = route.query.error as string | undefined;
 
-  if (token) {
-    authStore.handleOAuthCallback(token);
-    await authStore.loadUser();
+  if (error) {
+    console.error('OAuth error:', error);
+    router.replace('/');
+    return;
   }
 
-  // Redirect to home or back to where they came from
+  if (code) {
+    try {
+      // Exchange the short-lived code for a JWT via POST
+      const response = await fetch(`${API_BASE}/auth/token-exchange`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code }),
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        authStore.handleOAuthCallback(data.token);
+        await authStore.loadUser();
+      }
+    } catch {
+      // Exchange failed — redirect home
+    }
+  }
+
   router.replace('/');
 });
 </script>

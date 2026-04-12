@@ -39,7 +39,6 @@ const startGame = async () => {
     const gameId = await gameStore.createNewGame({
       targetScore: config.targetScore,
       matchFormat: config.matchFormat,
-      timerDuration: config.timerDuration,
       enableBogeyNumbers: config.enableBogeyNumbers,
       categoryId: category.id,
       categoryName: category.name,

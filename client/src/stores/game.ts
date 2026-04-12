@@ -80,11 +80,6 @@ export const useGameStore = defineStore('game', () => {
     return state.value.config.matchFormat;
   });
 
-  const timerDuration = computed(() => {
-    if (!currentLeg.value) return 45;
-    return currentLeg.value.players[activePlayerIndex.value].timerDuration;
-  });
-
   const turns = computed(() => {
     if (!currentLeg.value) return [];
     return currentLeg.value.turns;
@@ -446,7 +441,6 @@ export const useGameStore = defineStore('game', () => {
     activePlayerName,
     legWins,
     matchFormat,
-    timerDuration,
     turns,
     usedPlayerIds,
     matchPhase,

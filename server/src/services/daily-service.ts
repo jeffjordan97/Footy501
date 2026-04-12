@@ -33,6 +33,29 @@ export interface LeaderboardEntry {
 // ---------------------------------------------------------------------------
 
 /**
+ * Well-known "big" clubs that casual football fans would recognise.
+ * Only these teams (plus league-wide categories) are eligible for daily challenges.
+ */
+const DAILY_ELIGIBLE_TEAMS = new Set([
+  // Premier League
+  'Manchester United', 'Manchester City', 'Liverpool', 'Arsenal', 'Chelsea',
+  'Tottenham Hotspur', 'Newcastle United', 'Aston Villa', 'West Ham United',
+  'Everton', 'Leicester City', 'Leeds United',
+  // La Liga
+  'Real Madrid', 'Barcelona', 'Atletico Madrid', 'Sevilla', 'Valencia',
+  'Real Betis', 'Villarreal', 'Real Sociedad', 'Athletic Bilbao',
+  // Bundesliga
+  'Bayern Munich', 'Borussia Dortmund', 'RB Leipzig', 'Bayer Leverkusen',
+  'Schalke 04', 'Eintracht Frankfurt', 'VfB Stuttgart', 'Borussia Mönchengladbach',
+  // Serie A
+  'Juventus', 'AC Milan', 'Inter Milan', 'AS Roma', 'Napoli', 'Lazio',
+  'Fiorentina', 'Atalanta',
+  // Ligue 1
+  'Paris Saint-Germain', 'Olympique Marseille', 'Olympique Lyon', 'AS Monaco',
+  'Lille', 'Nice',
+]);
+
+/**
  * Simple deterministic hash for seeding category selection from a date string.
  */
 function hashDate(dateStr: string): number {
@@ -72,8 +95,13 @@ export async function getTodayChallenge(): Promise<DailyChallenge> {
     return rowToChallenge(existing[0]);
   }
 
-  // Generate a new challenge deterministically
-  const categories = await getAvailableCategories();
+  // Generate a new challenge deterministically.
+  // Filter to league-wide categories and well-known big clubs only,
+  // so the daily challenge is accessible to casual football fans.
+  const allCategories = await getAvailableCategories();
+  const categories = allCategories.filter(
+    (c) => c.teamName === null || DAILY_ELIGIBLE_TEAMS.has(c.teamName),
+  );
   if (categories.length === 0) {
     throw new Error('No categories available to create daily challenge');
   }
@@ -155,7 +183,6 @@ export async function startDailyAttempt(
   const { gameId, state } = await createGame({
     targetScore: 501,
     matchFormat: 1,
-    timerDuration: 0,
     enableBogeyNumbers: false,
     categoryId: challenge.categoryId,
     categoryName: challenge.categoryName,
@@ -185,21 +212,27 @@ export async function startDailyAttempt(
 }
 
 /**
- * Mark a daily challenge attempt as complete with final score and turn count.
+ * Mark a daily challenge attempt as complete with server-derived score.
+ * Finds the attempt by gameId to prevent spoofing.
  */
 export async function completeDailyAttempt(
-  attemptId: string,
+  gameId: string,
   finalScore: number,
   turnsTaken: number,
 ): Promise<void> {
-  await db
+  const [updated] = await db
     .update(dailyChallengeAttempts)
     .set({
       finalScore,
       turnsTaken,
       completed: true,
     })
-    .where(eq(dailyChallengeAttempts.id, attemptId));
+    .where(eq(dailyChallengeAttempts.gameId, gameId))
+    .returning({ id: dailyChallengeAttempts.id });
+
+  if (!updated) {
+    throw new Error('No attempt found for this game');
+  }
 }
 
 /**

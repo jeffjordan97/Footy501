@@ -61,9 +61,16 @@ export const useAuthStore = defineStore('auth', () => {
     window.location.href = `${apiBase}/api/auth/google`;
   }
 
-  function linkGoogle(): void {
-    if (!user.value) return;
+  async function linkGoogle(): Promise<void> {
+    if (!user.value || !token.value) return;
     const apiBase = import.meta.env.VITE_API_URL ?? '';
+    // Ask the server to set an httpOnly cookie, then redirect to OAuth
+    await fetch(`${apiBase}/api/auth/link-prepare`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token.value}` },
+      credentials: 'include',
+      body: JSON.stringify({ linkTo: user.value.id }),
+    });
     window.location.href = `${apiBase}/api/auth/google?linkTo=${user.value.id}`;
   }
 

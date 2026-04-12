@@ -110,10 +110,10 @@ export async function startDailyAttempt(displayName: string, guestId?: string, p
   });
 }
 
-export async function completeDailyAttempt(gameId: string, finalScore: number, turnsTaken: number) {
+export async function completeDailyAttempt(gameId: string) {
   return request<{ success: boolean }>('/daily/complete', {
     method: 'POST',
-    body: JSON.stringify({ gameId, finalScore, turnsTaken }),
+    body: JSON.stringify({ gameId }),
   });
 }
 
@@ -151,7 +151,6 @@ export interface LegState {
 
 export interface LegPlayerState {
   readonly score: number;
-  readonly timerDuration: number;
 }
 
 export interface TurnEntry {
@@ -184,7 +183,6 @@ export interface StatCategoryOption {
 export interface CreateGameRequest {
   readonly targetScore: number;
   readonly matchFormat: number;
-  readonly timerDuration: number;
   readonly enableBogeyNumbers: boolean;
   readonly categoryId: string;
   readonly categoryName: string;

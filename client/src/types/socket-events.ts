@@ -26,7 +26,6 @@ export interface LegState {
 
 export interface LegPlayerState {
   readonly score: number;
-  readonly timerDuration: number;
 }
 
 export interface TurnEntry {
@@ -52,7 +51,6 @@ export interface AnswerResult {
 export interface RoomConfig {
   readonly targetScore: number;
   readonly matchFormat: number;
-  readonly timerDuration: number;
   readonly enableBogeyNumbers: boolean;
   readonly categoryId: string;
   readonly categoryName: string;

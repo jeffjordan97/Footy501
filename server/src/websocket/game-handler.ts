@@ -1,10 +1,21 @@
 import type { Server, Socket } from 'socket.io';
+import { z } from 'zod';
 import type {
   ServerToClientEvents,
   ClientToServerEvents,
 } from '../types/socket-events.js';
 import type { MatchState, TurnResult } from '../lib/game-engine/types.js';
 import { submitGameAnswer, handleGameTimeout, getGame } from '../services/game-service.js';
+
+const SubmitAnswerEventSchema = z.object({
+  gameId: z.string().uuid(),
+  footballerId: z.string().min(1).max(64),
+  footballerName: z.string().min(1).max(100),
+});
+
+const TimeoutEventSchema = z.object({
+  gameId: z.string().uuid(),
+});
 import { verifyToken } from '../services/auth-service.js';
 import {
   registerConnection,
@@ -56,7 +67,14 @@ export function registerGameHandlers(io: TypedServer): void {
     }
 
     // --- game:submit-answer -----------------------------------------------
-    socket.on('game:submit-answer', async ({ gameId, footballerId, footballerName }, callback) => {
+    socket.on('game:submit-answer', async (data, callback) => {
+      const parsed = SubmitAnswerEventSchema.safeParse(data);
+      if (!parsed.success) {
+        callback({ success: false, error: 'Invalid input' });
+        return;
+      }
+      const { gameId, footballerId, footballerName } = parsed.data;
+
       // Auth: verify socket is a participant in this game
       const seat = socketGameMap.get(socket.id);
       if (!seat || seat.gameId !== gameId) {
@@ -105,7 +123,14 @@ export function registerGameHandlers(io: TypedServer): void {
     });
 
     // --- game:timeout -----------------------------------------------------
-    socket.on('game:timeout', async ({ gameId }, callback) => {
+    socket.on('game:timeout', async (data, callback) => {
+      const parsed = TimeoutEventSchema.safeParse(data);
+      if (!parsed.success) {
+        callback({ success: false, error: 'Invalid input' });
+        return;
+      }
+      const { gameId } = parsed.data;
+
       const seat = socketGameMap.get(socket.id);
       if (!seat || seat.gameId !== gameId) {
         callback({ success: false, error: 'Not a participant in this game' });

@@ -17,7 +17,6 @@ import { randomUUID } from 'node:crypto';
 export interface CreateGameParams {
   readonly targetScore: number;
   readonly matchFormat: number;
-  readonly timerDuration: number;
   readonly enableBogeyNumbers: boolean;
   readonly categoryId: string;
   readonly categoryName: string;
@@ -68,7 +67,7 @@ export async function createGame(
     targetScore: config.targetScore as TargetScore,
     statCategory,
     matchFormat: config.matchFormat as MatchFormat,
-    timerDuration: config.timerDuration,
+    timerDuration: 0,
     enableBogeyNumbers: config.enableBogeyNumbers,
     tiebreakerTarget: 101,
   };

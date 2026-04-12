@@ -1,5 +1,6 @@
 import { Router, type Router as RouterType } from 'express';
 import { getAvailableCategories } from '../services/category-service.js';
+import { logError } from '../lib/log-error.js';
 
 const router: RouterType = Router();
 
@@ -9,7 +10,7 @@ router.get('/', async (_req, res) => {
     const categories = await getAvailableCategories();
     res.json({ categories });
   } catch (error) {
-    console.error('Get categories failed:', error);
+    logError('Get categories failed', error);
     res.status(500).json({ error: 'Failed to get categories' });
   }
 });

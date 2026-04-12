@@ -1,3 +1,5 @@
+import { randomBytes } from 'node:crypto';
+
 // Google OAuth configuration
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
 const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET;
@@ -42,7 +44,11 @@ export async function exchangeGoogleCode(code: string): Promise<{ accessToken: s
     throw new Error(data.error_description ?? data.error);
   }
 
-  return { accessToken: data.access_token! };
+  if (!data.access_token) {
+    throw new Error('No access token received from Google');
+  }
+
+  return { accessToken: data.access_token };
 }
 
 export async function getGoogleUser(
@@ -52,7 +58,68 @@ export async function getGoogleUser(
     headers: { Authorization: `Bearer ${accessToken}` },
   });
 
-  const data = (await response.json()) as { id: string; name: string };
+  const data = (await response.json()) as { id?: string; name?: string };
+
+  if (!data.id || !data.name) {
+    throw new Error('Invalid response from Google userinfo endpoint');
+  }
 
   return { id: data.id, name: data.name };
+}
+
+// --- OAuth CSRF nonce ---
+
+export function generateOAuthNonce(): string {
+  return randomBytes(16).toString('hex');
+}
+
+// --- Short-lived exchange codes (C2 fix) ---
+
+interface ExchangeEntry {
+  readonly token: string;
+  readonly provider: string;
+  readonly isNew: boolean;
+  readonly expiresAt: number;
+}
+
+const exchangeCodes = new Map<string, ExchangeEntry>();
+
+const EXCHANGE_CODE_TTL_MS = 60_000; // 60 seconds
+
+/** Generate a single-use exchange code that maps to a JWT. */
+export function createExchangeCode(token: string, provider: string, isNew: boolean): string {
+  const code = randomBytes(24).toString('hex');
+  exchangeCodes.set(code, {
+    token,
+    provider,
+    isNew,
+    expiresAt: Date.now() + EXCHANGE_CODE_TTL_MS,
+  });
+  return code;
+}
+
+/** Redeem an exchange code for the JWT. Returns null if expired or invalid. */
+export function redeemExchangeCode(code: string): ExchangeEntry | null {
+  const entry = exchangeCodes.get(code);
+  if (!entry) return null;
+
+  // Single-use: delete immediately
+  exchangeCodes.delete(code);
+
+  if (Date.now() > entry.expiresAt) return null;
+
+  return entry;
+}
+
+/** Periodic cleanup of expired exchange codes. */
+export function cleanupExchangeCodes(): number {
+  const now = Date.now();
+  let cleaned = 0;
+  for (const [code, entry] of exchangeCodes) {
+    if (now > entry.expiresAt) {
+      exchangeCodes.delete(code);
+      cleaned += 1;
+    }
+  }
+  return cleaned;
 }

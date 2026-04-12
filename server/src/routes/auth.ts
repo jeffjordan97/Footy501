@@ -1,5 +1,6 @@
 import { Router, type Router as RouterType } from 'express';
 import { z } from 'zod';
+import { logError } from '../lib/log-error.js';
 import {
   createGuestUser,
   verifyToken,
@@ -16,7 +17,11 @@ import {
   getGoogleAuthUrl,
   exchangeGoogleCode,
   getGoogleUser,
+  generateOAuthNonce,
+  createExchangeCode,
+  redeemExchangeCode,
 } from '../services/oauth-service.js';
+import { authenticateRequest } from '../middleware/auth.js';
 
 const router: RouterType = Router();
 
@@ -35,7 +40,7 @@ router.post('/guest', async (req, res) => {
     const result = await createGuestUser(displayName);
     res.status(201).json(result);
   } catch (error) {
-    console.error('Guest auth failed:', error);
+    logError('Guest auth failed', error);
     res.status(500).json({ error: 'Failed to create guest account' });
   }
 });
@@ -63,25 +68,10 @@ router.get('/me', async (req, res) => {
     }
     res.json({ user });
   } catch (error) {
-    console.error('Get user failed:', error);
+    logError('Get user failed', error);
     res.status(500).json({ error: 'Failed to get user' });
   }
 });
-
-/** Helper: extract and verify the Bearer token, returning the userId. */
-function authenticateRequest(req: import('express').Request, res: import('express').Response): string | null {
-  const authHeader = req.headers.authorization;
-  if (!authHeader?.startsWith('Bearer ')) {
-    res.status(401).json({ error: 'No token provided' });
-    return null;
-  }
-  const payload = verifyToken(authHeader.slice(7));
-  if (!payload) {
-    res.status(401).json({ error: 'Invalid or expired token' });
-    return null;
-  }
-  return payload.userId;
-}
 
 const DisplayNameSchema = z.object({
   displayName: z.string().trim().min(1).max(30),
@@ -102,7 +92,7 @@ router.patch('/me', async (req, res) => {
     const result = await updateUserDisplayName(userId, parsed.data.displayName);
     res.json(result);
   } catch (error) {
-    console.error('Update display name failed:', error);
+    logError('Update display name failed', error);
     res.status(500).json({ error: 'Failed to update display name' });
   }
 });
@@ -117,7 +107,7 @@ router.get('/me/data', async (req, res) => {
     res.setHeader('Content-Disposition', 'attachment; filename="footy501-data.json"');
     res.json(data);
   } catch (error) {
-    console.error('Export data failed:', error);
+    logError('Export data failed', error);
     res.status(500).json({ error: 'Failed to export data' });
   }
 });
@@ -131,7 +121,7 @@ router.post('/me/delete', async (req, res) => {
     await softDeleteUser(userId);
     res.json({ message: 'Account scheduled for deletion in 14 days. Sign in again to cancel.' });
   } catch (error) {
-    console.error('Delete account failed:', error);
+    logError('Delete account failed', error);
     res.status(500).json({ error: 'Failed to delete account' });
   }
 });
@@ -145,7 +135,7 @@ router.post('/me/cancel-delete', async (req, res) => {
     const user = await cancelUserDeletion(userId);
     res.json({ user });
   } catch (error) {
-    console.error('Cancel deletion failed:', error);
+    logError('Cancel deletion failed', error);
     res.status(500).json({ error: 'Failed to cancel deletion' });
   }
 });
@@ -160,7 +150,43 @@ router.get('/providers', (_req, res) => {
   });
 });
 
+// --- Link Prepare (sets httpOnly cookie for account linking) ---
+
+const LinkPrepareSchema = z.object({
+  linkTo: z.string().uuid(),
+});
+
+/** POST /api/auth/link-prepare - Set an httpOnly cookie for account linking. */
+router.post('/link-prepare', (req, res) => {
+  const userId = authenticateRequest(req, res);
+  if (!userId) return;
+
+  const parsed = LinkPrepareSchema.safeParse(req.body);
+  if (!parsed.success || parsed.data.linkTo !== userId) {
+    res.status(403).json({ error: 'Cannot link account: unauthorized' });
+    return;
+  }
+
+  res.cookie('link_auth', userId, {
+    httpOnly: true,
+    sameSite: 'lax',
+    secure: process.env.NODE_ENV === 'production',
+    maxAge: 5 * 60 * 1000, // 5 minutes
+    path: '/',
+  });
+
+  res.json({ ok: true });
+});
+
 // --- Google OAuth ---
+
+const OAUTH_COOKIE_OPTIONS = {
+  httpOnly: true,
+  sameSite: 'lax' as const,
+  secure: process.env.NODE_ENV === 'production',
+  maxAge: 5 * 60 * 1000, // 5 minutes
+  path: '/',
+};
 
 /** GET /api/auth/google - Redirect to Google OAuth. */
 router.get('/google', (req, res) => {
@@ -169,42 +195,66 @@ router.get('/google', (req, res) => {
     return;
   }
 
+  // C3 fix: validate linkTo against the httpOnly cookie set by /link-prepare
   const linkTo = typeof req.query.linkTo === 'string' ? req.query.linkTo : undefined;
-  const state = linkTo ? JSON.stringify({ linkTo }) : undefined;
+  if (linkTo) {
+    const cookies = (req as unknown as { cookies: Record<string, string> }).cookies;
+    const cookieUserId = cookies?.link_auth;
+    if (!cookieUserId || cookieUserId !== linkTo) {
+      res.status(403).json({ error: 'Cannot link account: unauthorized' });
+      return;
+    }
+    // Don't clear yet — needed on callback to verify linkTo in state
+  }
 
-  res.redirect(getGoogleAuthUrl(state));
+  // C1 fix: generate CSRF nonce and store in signed cookie
+  const nonce = generateOAuthNonce();
+  res.cookie('oauth_nonce', nonce, OAUTH_COOKIE_OPTIONS);
+
+  const statePayload = JSON.stringify({ nonce, linkTo: linkTo ?? null });
+  res.redirect(getGoogleAuthUrl(statePayload));
 });
 
 /** GET /api/auth/google/callback - Google OAuth callback. */
 router.get('/google/callback', async (req, res) => {
   const code = typeof req.query.code === 'string' ? req.query.code : undefined;
   const stateRaw = typeof req.query.state === 'string' ? req.query.state : undefined;
+  const errorUrl = new URL('/auth/callback', CLIENT_URL);
 
   if (!code) {
-    res.status(400).json({ error: 'Missing authorization code' });
+    errorUrl.searchParams.set('error', 'missing_code');
+    res.redirect(errorUrl.toString());
+    return;
+  }
+
+  // C1 fix: validate CSRF nonce from cookie against state
+  const cookieNonce = (req as unknown as { cookies: Record<string, string> }).cookies?.oauth_nonce;
+  res.clearCookie('oauth_nonce', { path: '/' });
+
+  let nonce: string | undefined;
+  let linkTo: string | undefined;
+  if (stateRaw) {
+    try {
+      const parsed: unknown = JSON.parse(stateRaw);
+      if (typeof parsed === 'object' && parsed !== null) {
+        const state = parsed as Record<string, unknown>;
+        if (typeof state.nonce === 'string') nonce = state.nonce;
+        if (typeof state.linkTo === 'string') linkTo = state.linkTo;
+      }
+    } catch {
+      // Ignore invalid state JSON
+    }
+  }
+
+  if (!cookieNonce || !nonce || cookieNonce !== nonce) {
+    errorUrl.searchParams.set('error', 'state_mismatch');
+    res.redirect(errorUrl.toString());
     return;
   }
 
   try {
     const { accessToken } = await exchangeGoogleCode(code);
     const googleUser = await getGoogleUser(accessToken);
-
-    let linkTo: string | undefined;
-    if (stateRaw) {
-      try {
-        const parsed: unknown = JSON.parse(stateRaw);
-        if (
-          typeof parsed === 'object' &&
-          parsed !== null &&
-          'linkTo' in parsed &&
-          typeof (parsed as { linkTo: unknown }).linkTo === 'string'
-        ) {
-          linkTo = (parsed as { linkTo: string }).linkTo;
-        }
-      } catch {
-        // Ignore invalid state JSON
-      }
-    }
 
     let token: string;
     let isNew = false;
@@ -218,19 +268,42 @@ router.get('/google/callback', async (req, res) => {
       isNew = result.isNew;
     }
 
+    // C2 fix: use a short-lived exchange code instead of JWT in URL
+    const exchangeCode = createExchangeCode(token, 'google', isNew);
+
     const redirectUrl = new URL('/auth/callback', CLIENT_URL);
-    redirectUrl.searchParams.set('token', token);
+    redirectUrl.searchParams.set('code', exchangeCode);
     redirectUrl.searchParams.set('provider', 'google');
-    redirectUrl.searchParams.set('isNew', String(isNew));
 
     res.redirect(redirectUrl.toString());
   } catch (error) {
-    console.error('Google OAuth callback failed:', error);
-    const errorUrl = new URL('/auth/callback', CLIENT_URL);
+    const msg = error instanceof Error ? error.message : 'OAuth failed';
+    console.error('Google OAuth callback failed:', msg);
     errorUrl.searchParams.set('error', 'oauth_failed');
     errorUrl.searchParams.set('provider', 'google');
     res.redirect(errorUrl.toString());
   }
+});
+
+/** POST /api/auth/token-exchange - Exchange a short-lived code for a JWT. */
+const ExchangeSchema = z.object({
+  code: z.string().min(1).max(128),
+});
+
+router.post('/token-exchange', (req, res) => {
+  const parsed = ExchangeSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: 'Invalid request body' });
+    return;
+  }
+
+  const entry = redeemExchangeCode(parsed.data.code);
+  if (!entry) {
+    res.status(400).json({ error: 'Invalid or expired exchange code' });
+    return;
+  }
+
+  res.json({ token: entry.token, provider: entry.provider, isNew: entry.isNew });
 });
 
 export default router;

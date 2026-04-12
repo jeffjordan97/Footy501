@@ -1,5 +1,6 @@
 import { Router, type Router as RouterType } from 'express';
 import { z } from 'zod';
+import { logError } from '../lib/log-error.js';
 import {
   getTodayChallenge,
   startDailyAttempt,
@@ -8,6 +9,9 @@ import {
   hasPlayedToday,
   getChallengeByDate,
 } from '../services/daily-service.js';
+import { getGame } from '../services/game-service.js';
+import { verifyToken } from '../services/auth-service.js';
+import type { MatchState } from '../lib/game-engine/types.js';
 
 const router: RouterType = Router();
 
@@ -18,8 +22,7 @@ const StartSchema = z.object({
 });
 
 const CompleteSchema = z.object({
-  finalScore: z.number().int().min(0),
-  turnsTaken: z.number().int().min(1),
+  gameId: z.string().uuid(),
 });
 
 // GET /api/daily/today - Get today's challenge info
@@ -28,7 +31,7 @@ router.get('/today', async (_req, res) => {
     const challenge = await getTodayChallenge();
     res.json({ challenge });
   } catch (error) {
-    console.error('Get daily challenge failed:', error);
+    logError('Get daily challenge failed', error);
     res.status(500).json({ error: 'Failed to get daily challenge' });
   }
 });
@@ -60,14 +63,13 @@ router.post('/start', async (req, res) => {
     const result = await startDailyAttempt(challenge.id, userId, parsed.data.displayName, player2Name);
     res.status(201).json(result);
   } catch (error) {
-    console.error('Start daily attempt failed:', error);
+    logError('Start daily attempt failed', error);
     res.status(500).json({ error: 'Failed to start daily challenge' });
   }
 });
 
-// POST /api/daily/:attemptId/complete - Mark attempt as complete
-router.post('/:attemptId/complete', async (req, res) => {
-  const { attemptId } = req.params;
+// POST /api/daily/complete - Mark attempt as complete (score derived server-side)
+router.post('/complete', async (req, res) => {
   const parsed = CompleteSchema.safeParse(req.body);
 
   if (!parsed.success) {
@@ -76,19 +78,41 @@ router.post('/:attemptId/complete', async (req, res) => {
   }
 
   try {
-    await completeDailyAttempt(attemptId, parsed.data.finalScore, parsed.data.turnsTaken);
+    // Derive score from the authoritative game state
+    const game = await getGame(parsed.data.gameId);
+    if (!game) {
+      res.status(404).json({ error: 'Game not found' });
+      return;
+    }
+
+    const state = game.state as MatchState;
+
+    // Only allow completion of finished games
+    if (state.phase !== 'FINISHED') {
+      res.status(400).json({ error: 'Game is not finished' });
+      return;
+    }
+
+    const currentLeg = state.legs[state.currentLegIndex];
+    const finalScore = currentLeg?.players[0]?.score ?? 0;
+    const turnsTaken = currentLeg?.turns.length ?? 0;
+
+    await completeDailyAttempt(parsed.data.gameId, finalScore, turnsTaken);
     res.json({ success: true });
   } catch (error) {
-    console.error('Complete daily attempt failed:', error);
+    logError('Complete daily attempt failed', error);
     res.status(500).json({ error: 'Failed to complete daily attempt' });
   }
 });
 
+const DateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
+
 // GET /api/daily/leaderboard - Get leaderboard for a given day
 router.get('/leaderboard', async (req, res) => {
   try {
-    const dateStr = typeof req.query.date === 'string'
-      ? req.query.date
+    const rawDate = typeof req.query.date === 'string' ? req.query.date : undefined;
+    const dateStr = rawDate && DateSchema.safeParse(rawDate).success
+      ? rawDate
       : new Date().toISOString().split('T')[0] as string;
 
     const challenge = await getChallengeByDate(dateStr);
@@ -100,7 +124,7 @@ router.get('/leaderboard', async (req, res) => {
     const entries = await getDailyLeaderboard(challenge.id);
     res.json({ entries });
   } catch (error) {
-    console.error('Get daily leaderboard failed:', error);
+    logError('Get daily leaderboard failed', error);
     res.status(500).json({ error: 'Failed to get leaderboard' });
   }
 });
@@ -120,7 +144,7 @@ router.get('/status', async (req, res) => {
     const result = await hasPlayedToday(challenge.id, userId, displayName ?? '');
     res.json(result);
   } catch (error) {
-    console.error('Check daily status failed:', error);
+    logError('Check daily status failed', error);
     res.status(500).json({ error: 'Failed to check daily status' });
   }
 });

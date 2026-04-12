@@ -1,12 +1,16 @@
 import 'dotenv/config';
 import express, { type Express } from 'express';
 import cors from 'cors';
+import helmet from 'helmet';
+import rateLimit from 'express-rate-limit';
+import cookieParser from 'cookie-parser';
 import { createServer } from 'http';
 import { Server } from 'socket.io';
 import apiRouter from './routes/index.js';
 import { registerGameHandlers, registerLobbyHandlers } from './websocket/index.js';
 import { cleanupStaleRooms } from './services/room-service.js';
 import { cleanupExpiredConnections } from './services/connection-service.js';
+import { cleanupExchangeCodes } from './services/oauth-service.js';
 import { db } from './db/index.js';
 import { sql } from 'drizzle-orm';
 
@@ -27,8 +31,31 @@ const io = new Server(httpServer, {
   },
 });
 
-app.use(cors({ origin }));
+// Security headers
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      connectSrc: ["'self'", origin, 'https://accounts.google.com'],
+      scriptSrc: ["'self'"],
+      styleSrc: ["'self'", "'unsafe-inline'"],
+      imgSrc: ["'self'", 'data:'],
+    },
+  },
+  referrerPolicy: { policy: 'strict-origin-when-cross-origin' },
+}));
+
+app.use(cors({ origin, credentials: true }));
 app.use(express.json());
+app.use(cookieParser());
+
+// Global rate limit: 100 requests per minute per IP
+app.use(rateLimit({
+  windowMs: 60_000,
+  max: 100,
+  standardHeaders: true,
+  legacyHeaders: false,
+}));
 
 app.get('/api/health', async (_req, res) => {
   try {
@@ -55,6 +82,11 @@ setInterval(() => {
   const cleaned = cleanupExpiredConnections();
   if (cleaned > 0) console.log(`Cleaned up ${cleaned} expired connections`);
 }, 5 * 60 * 1000);
+
+// Clean up expired OAuth exchange codes every minute
+setInterval(() => {
+  cleanupExchangeCodes();
+}, 60 * 1000);
 
 const PORT = parseInt(process.env.PORT ?? '3001', 10);
 

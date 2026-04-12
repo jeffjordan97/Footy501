@@ -1,5 +1,6 @@
 import { Router, type Router as RouterType } from 'express';
 import { searchPlayers, searchPlayersInCategory, getPlayersForCategory } from '../services/player-service.js';
+import { logError } from '../lib/log-error.js';
 
 const router: RouterType = Router();
 
@@ -22,7 +23,7 @@ router.get('/search', async (req, res) => {
     const players = await searchPlayers(query, limit);
     res.json({ players });
   } catch (error) {
-    console.error('Player search failed:', error);
+    logError('Player search failed', error);
     res.status(500).json({ error: 'Failed to search players' });
   }
 });
@@ -54,7 +55,7 @@ router.get('/search-category', async (req, res) => {
     const players = await searchPlayersInCategory(query, league, teamId, statType, limit);
     res.json({ players });
   } catch (error) {
-    console.error('Search players in category failed:', error);
+    logError('Search players in category failed', error);
     res.status(500).json({ error: 'Failed to search players' });
   }
 });
@@ -80,7 +81,7 @@ router.get('/category', async (req, res) => {
     const players = await getPlayersForCategory(league, teamId, statType, limit);
     res.json({ players });
   } catch (error) {
-    console.error('Get players for category failed:', error);
+    logError('Get players for category failed', error);
     res.status(500).json({ error: 'Failed to get players for category' });
   }
 });

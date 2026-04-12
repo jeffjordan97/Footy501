@@ -32,7 +32,6 @@ const {
   activePlayerIndex,
   activePlayerName,
   legWins,
-  timerDuration,
   turns,
   usedPlayerIds,
   matchPhase,
@@ -47,7 +46,6 @@ const {
 
 // --- Local UI state ---
 
-const timerRunning = ref(true);
 const submitting = ref(false);
 const bustVisible = ref(false);
 const bustReason = ref('');
@@ -113,8 +111,6 @@ const footballersNamed = computed(() =>
 const isPlayerInputDisabled = computed(() =>
   submitting.value || isLegFinished.value || isMatchFinished.value,
 );
-
-const hasTimer = computed(() => timerDuration.value > 0);
 
 // Solo mode: player 2 is a phantom ("Target", "Practice Mode") — auto-skip their turns
 const SOLO_PLAYER2_NAMES = new Set(['Target', 'Practice Mode']);
@@ -198,9 +194,6 @@ watch(
           await gameStore.handlePlayerTimeout();
         } finally {
           submitting.value = false;
-          if (!isLegFinished.value && !isMatchFinished.value && hasTimer.value) {
-            timerRunning.value = true;
-          }
         }
       }, 100);
     }
@@ -239,7 +232,6 @@ watch(lastTurnResult, (result) => {
 const handlePlayerSelect = async (player: PlayerOption) => {
   if (isPlayerInputDisabled.value) return;
 
-  timerRunning.value = false;
   submitting.value = true;
 
   // Capture the active player's score before submission
@@ -293,48 +285,23 @@ const handlePlayerSelect = async (player: PlayerOption) => {
         }
         // Resume immediately (busts handled by bust watcher)
         submitting.value = false;
-        if (!isLegFinished.value && !isMatchFinished.value) {
-          timerRunning.value = true;
-        }
       }
     }
   } catch (err) {
     console.error('[GameView] handlePlayerSelect error:', err);
     submitting.value = false;
-    if (!isLegFinished.value && !isMatchFinished.value) {
-      timerRunning.value = true;
-    }
   }
 };
 
 const handleRevealDismiss = () => {
   revealData.value = null;
   submitting.value = false;
-  // Restart timer for next turn unless leg/match is over
-  if (!isLegFinished.value && !isMatchFinished.value) {
-    timerRunning.value = true;
-  }
-};
-
-const handleTimeout = async () => {
-  timerRunning.value = false;
-  submitting.value = true;
-
-  try {
-    await gameStore.handlePlayerTimeout();
-  } finally {
-    submitting.value = false;
-    if (!isLegFinished.value && !isMatchFinished.value) {
-      timerRunning.value = true;
-    }
-  }
 };
 
 const handleContinue = () => {
   // Next leg -- the store should handle resetting leg state when loadGame
   // is called or via a dedicated action. For now, reload the game to get fresh state.
   if (gameId.value) {
-    timerRunning.value = true;
     gameStore.loadGame(gameId.value);
   }
 };
@@ -436,9 +403,6 @@ const handleGoHome = () => {
         :active-player="activePlayerIndex"
         :leg-wins="legWins"
         :target-score="targetScore"
-        :timer-duration="hasTimer ? timerDuration : 0"
-        :timer-running="hasTimer && timerRunning && !isPlayerInputDisabled"
-        @timeout="handleTimeout"
       />
 
       <!-- Near-miss checkout feedback -->

@@ -2,7 +2,6 @@
 import { ref, computed, watch, onMounted, nextTick } from 'vue';
 import AppSelect from '@/components/ui/AppSelect.vue';
 import AppButton from '@/components/ui/AppButton.vue';
-import AppSlider from '@/components/ui/AppSlider.vue';
 import AppSwitch from '@/components/ui/AppSwitch.vue';
 import { useCategoriesStore } from '@/stores/categories';
 import type { StatCategoryOption } from '@/lib/api';
@@ -27,7 +26,6 @@ const selectedStatType = ref<string[]>(['APPEARANCES']);
 // Game settings
 const targetScore = ref<string[]>(['501']);
 const matchFormat = ref<string[]>(['3']);
-const timerDuration = ref([45]);
 const enableBogeyNumbers = ref(false);
 
 // Randomise animation state
@@ -169,17 +167,10 @@ function randomiseAll(): void {
     { value: '5', weight: 20 },
   ]));
 
-  const timerSteps = [30, 35, 40, 45];
-  setArkNumValue(timerDuration, timerSteps[Math.floor(Math.random() * timerSteps.length)]);
-
   enableBogeyNumbers.value = Math.random() < 0.2;
 }
 
 function setArkValue(target: { value: string[] }, newVal: string): void {
-  target.value.splice(0, target.value.length, newVal);
-}
-
-function setArkNumValue(target: { value: number[] }, newVal: number): void {
   target.value.splice(0, target.value.length, newVal);
 }
 
@@ -189,7 +180,6 @@ async function applyPreset(preset: {
   statType?: string;
   targetScore?: string;
   matchFormat?: string;
-  timerDuration?: number;
   enableBogeyNumbers?: boolean;
 }): Promise<void> {
   if (preset.league !== undefined) {
@@ -210,9 +200,6 @@ async function applyPreset(preset: {
   if (preset.matchFormat !== undefined) {
     setArkValue(matchFormat, preset.matchFormat);
   }
-  if (preset.timerDuration !== undefined) {
-    setArkNumValue(timerDuration, preset.timerDuration);
-  }
   if (preset.enableBogeyNumbers !== undefined) {
     enableBogeyNumbers.value = preset.enableBogeyNumbers;
   }
@@ -231,7 +218,6 @@ const settingsSummary = computed(() => {
   parts.push(stat);
   parts.push(`${targetScore.value[0]} pts`);
   parts.push(`Best of ${matchFormat.value[0]}`);
-  parts.push(`${timerDuration.value[0]}s`);
   if (enableBogeyNumbers.value) parts.push('Bogey');
 
   return parts.join(' \u00B7 ');
@@ -264,7 +250,6 @@ defineExpose({
   config: computed(() => ({
     targetScore: Number(targetScore.value[0]),
     matchFormat: Number(matchFormat.value[0]),
-    timerDuration: timerDuration.value[0],
     enableBogeyNumbers: enableBogeyNumbers.value,
     category: selectedCategory.value,
   })),
@@ -275,7 +260,6 @@ defineExpose({
   selectedStatType,
   targetScore,
   matchFormat,
-  timerDuration,
   enableBogeyNumbers,
 });
 </script>
@@ -405,15 +389,6 @@ defineExpose({
         :items="matchFormatOptions"
         label="Match Format"
         placeholder="Select format..."
-      />
-
-      <AppSlider
-        v-model="timerDuration"
-        :min="15"
-        :max="60"
-        :step="5"
-        label="Timer Duration"
-        unit="s"
       />
 
       <AppSwitch
