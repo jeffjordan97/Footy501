@@ -109,7 +109,11 @@ const footballersNamed = computed(() =>
 );
 
 const isPlayerInputDisabled = computed(() =>
-  submitting.value || isLegFinished.value || isMatchFinished.value,
+  submitting.value
+  || isLegFinished.value
+  || isMatchFinished.value
+  // In solo/daily mode, disable input when it's the phantom player 2's turn
+  || (isSoloMode.value && isPlayer2Turn.value),
 );
 
 // Solo mode: player 2 is a phantom ("Target", "Practice Mode") — auto-skip their turns
@@ -502,10 +506,14 @@ const handleGoHome = () => {
         :final-score="celebrationFinalScore"
         :is-match-win="isMatchFinished"
         :category-name="categoryName"
+        :target-score="targetScore"
         :turns-taken="turns.length"
         :opponent-name="player2Name"
         :opponent-score="player2Score"
         :footballers-named="footballersNamed"
+        :turns="turns"
+        :player1-name="player1Name"
+        :player2-name="player2Name"
         @continue="handleContinue"
         @rematch="handleRematch"
         @home="handleGoHome"

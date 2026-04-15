@@ -174,122 +174,305 @@ const shareText = computed(() => {
   return lines.join('\n');
 });
 
-// --- Display helpers ---
+// --- Visual scorecard rows ---
 
-const displayedFootballers = computed(() => {
-  const MAX_SHOWN = 6;
-  const named = props.footballersNamed;
-  if (named.length <= MAX_SHOWN) return { shown: named, remaining: 0 };
-  return {
-    shown: named.slice(0, MAX_SHOWN),
-    remaining: named.length - MAX_SHOWN,
-  };
+interface ScorecardRow {
+  readonly footballerName: string;
+  readonly statValue: number;
+  readonly scoreAfter: number;
+  readonly result: string;
+  readonly isBust: boolean;
+  readonly isCheckout: boolean;
+  readonly isTimeout: boolean;
+}
+
+const scorecardRows = computed<readonly ScorecardRow[]>(() => {
+  if (!props.turns || props.turns.length === 0) return [];
+
+  const relevantTurns = isSoloMode.value
+    ? props.turns.filter((t) => t.playerIndex === 0)
+    : props.turns;
+
+  return relevantTurns.map((t) => ({
+    footballerName: t.footballerName ?? 'Unknown',
+    statValue: t.statValue ?? 0,
+    scoreAfter: t.scoreAfter,
+    result: t.result,
+    isBust: t.result.startsWith('BUST_') || t.result === 'DUPLICATE_PLAYER',
+    isCheckout: t.result === 'CHECKOUT',
+    isTimeout: t.result === 'TIMEOUT',
+  }));
 });
 
-// --- Canvas rendering ---
+// --- Canvas rendering (iPhone 14 Pro dimensions @ 3x resolution) ---
 
 function renderCardToCanvas(): HTMLCanvasElement {
+  // iPhone 14 Pro: 1170 x 2532 pixels (390 x 844 logical @ 3x)
+  const W = 1170;
+  const H = 2532;
+  const S = 3; // scale factor — all sizes are in logical pixels multiplied by S
+
   const canvas = document.createElement('canvas');
-  canvas.width = 800;
-  canvas.height = 1000;
+  canvas.width = W;
+  canvas.height = H;
   const ctx = canvas.getContext('2d')!;
 
+  const rows = scorecardRows.value;
+
+  // --- Background ---
   ctx.fillStyle = '#0A0F0D';
-  ctx.fillRect(0, 0, 800, 1000);
+  ctx.fillRect(0, 0, W, H);
 
-  const gradient = ctx.createLinearGradient(0, 0, 0, 200);
-  gradient.addColorStop(0, 'rgba(21, 128, 61, 0.15)');
-  gradient.addColorStop(1, 'rgba(21, 128, 61, 0)');
-  ctx.fillStyle = gradient;
-  ctx.fillRect(0, 0, 800, 200);
+  // Subtle green gradient at top
+  const grad = ctx.createLinearGradient(0, 0, 0, 400 * S);
+  grad.addColorStop(0, 'rgba(21, 128, 61, 0.12)');
+  grad.addColorStop(1, 'rgba(21, 128, 61, 0)');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, W, 400 * S);
 
-  ctx.textAlign = 'center';
+  // Pitch centre circle — positioned in the lower half so it's hidden behind header
+  const circleY = H * 0.6;
+  ctx.save();
+  ctx.globalAlpha = 0.04;
+  ctx.strokeStyle = '#E2E8F0';
+  ctx.lineWidth = 2 * S;
+  ctx.beginPath();
+  ctx.arc(W / 2, circleY, 160 * S, 0, Math.PI * 2);
+  ctx.stroke();
+  // Centre dot
+  ctx.beginPath();
+  ctx.arc(W / 2, circleY, 4 * S, 0, Math.PI * 2);
   ctx.fillStyle = '#E2E8F0';
-  ctx.font = 'bold 44px sans-serif';
-  ctx.fillText('FOOTY 501 \uD83C\uDFAF', 400, 80);
+  ctx.fill();
+  // Halfway line
+  ctx.setLineDash([8 * S, 6 * S]);
+  ctx.lineWidth = 1.5 * S;
+  ctx.beginPath();
+  ctx.moveTo(0, circleY);
+  ctx.lineTo(W, circleY);
+  ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.restore();
 
+  // Ensure full opacity for everything drawn from here on
+  ctx.globalAlpha = 1;
+
+  // --- Header ---
+  ctx.textAlign = 'center';
+
+  // Title — large, top of canvas
+  ctx.fillStyle = '#E2E8F0';
+  ctx.font = `bold 120px sans-serif`;
+  ctx.fillText('Footy 501', W / 2, 180);
+
+  // Daily badge
+  let subtitleY = 270;
   if (props.isDaily) {
     ctx.fillStyle = '#D97706';
-    ctx.font = 'bold 18px sans-serif';
-    ctx.fillText(`DAILY CHALLENGE${props.date ? ` - ${props.date}` : ''}`, 400, 130);
+    ctx.font = `bold 42px sans-serif`;
+    ctx.fillText(`DAILY CHALLENGE${props.date ? `  \u00B7  ${props.date}` : ''}`, W / 2, subtitleY);
+    subtitleY += 70;
   }
 
-  ctx.fillStyle = '#A78BFA';
-  ctx.font = 'bold 28px sans-serif';
-  const categoryY = props.isDaily ? 180 : 150;
-  ctx.fillText(props.categoryName, 400, categoryY);
+  // Category name
+  ctx.fillStyle = '#94A3B8';
+  ctx.font = `48px sans-serif`;
+  ctx.fillText(props.categoryName, W / 2, subtitleY);
 
-  // Arrow chain or score
-  const chainY = categoryY + 60;
-  if (isSoloMode.value && arrowChain.value) {
+  // Divider
+  const divY = subtitleY + 50;
+  ctx.strokeStyle = 'rgba(255, 255, 255, 0.15)';
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.moveTo(180, divY);
+  ctx.lineTo(W - 180, divY);
+  ctx.stroke();
+
+  // --- Vertical arrow flow ---
+  const SCORECARD_TOP = divY + 60;
+
+  if (rows.length > 0) {
+    const CARD_W = 900;
+    const CARD_H = 150;
+    const CARD_X = (W - CARD_W) / 2;
+    const ARROW_GAP = 50;
+
+    // Starting score card (target)
+    ctx.textAlign = 'center';
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.08)';
+    roundRect(ctx, CARD_X, SCORECARD_TOP, CARD_W, CARD_H, 20);
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.2)';
+    ctx.lineWidth = 3;
+    roundRect(ctx, CARD_X, SCORECARD_TOP, CARD_W, CARD_H, 20);
+    ctx.stroke();
+
+    ctx.fillStyle = '#94A3B8';
+    ctx.font = `36px sans-serif`;
+    ctx.fillText('START', W / 2, SCORECARD_TOP + 55);
     ctx.fillStyle = '#E2E8F0';
-    ctx.font = 'bold 22px monospace';
-    const chainLines = wrapText(ctx, arrowChain.value, 700);
-    let y = chainY;
-    for (const line of chainLines) {
-      ctx.fillText(line, 400, y);
-      y += 32;
+    ctx.font = `bold 72px monospace`;
+    ctx.fillText(String(props.targetScore), W / 2, SCORECARD_TOP + 120);
+
+    let y = SCORECARD_TOP + CARD_H;
+
+    for (let i = 0; i < rows.length; i++) {
+      const row = rows[i]!;
+
+      // --- Arrow between cards ---
+      const arrowX = W / 2;
+      const arrowTop = y + 5;
+      const arrowHeadY = y + ARROW_GAP - 5;
+
+      const arrowColor = row.isBust ? '#DC2626' : row.isCheckout ? '#22C55E' : '#94A3B8';
+
+      ctx.strokeStyle = arrowColor;
+      ctx.lineWidth = 6;
+      ctx.beginPath();
+      ctx.moveTo(arrowX, arrowTop);
+      ctx.lineTo(arrowX, arrowHeadY - 12);
+      ctx.stroke();
+
+      // Arrowhead triangle
+      ctx.fillStyle = arrowColor;
+      ctx.beginPath();
+      ctx.moveTo(arrowX, arrowHeadY);
+      ctx.lineTo(arrowX - 14, arrowHeadY - 18);
+      ctx.lineTo(arrowX + 14, arrowHeadY - 18);
+      ctx.closePath();
+      ctx.fill();
+
+      y += ARROW_GAP;
+
+      // --- Card ---
+      if (row.isBust) {
+        ctx.fillStyle = 'rgba(220, 38, 38, 0.15)';
+        ctx.strokeStyle = '#DC2626';
+      } else if (row.isCheckout) {
+        ctx.fillStyle = 'rgba(34, 197, 94, 0.18)';
+        ctx.strokeStyle = '#22C55E';
+      } else if (row.isTimeout) {
+        ctx.fillStyle = 'rgba(245, 158, 11, 0.12)';
+        ctx.strokeStyle = '#F59E0B';
+      } else {
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.05)';
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.25)';
+      }
+      ctx.lineWidth = 3;
+      roundRect(ctx, CARD_X, y, CARD_W, CARD_H, 20);
+      ctx.fill();
+      roundRect(ctx, CARD_X, y, CARD_W, CARD_H, 20);
+      ctx.stroke();
+
+      // Turn number (left)
+      ctx.textAlign = 'left';
+      ctx.fillStyle = '#64748B';
+      ctx.font = `bold 32px monospace`;
+      ctx.fillText(String(i + 1).padStart(2, '0'), CARD_X + 40, y + 90);
+
+      // Footballer name
+      const name = row.isTimeout ? 'Timed out' : row.footballerName;
+      const maxNameChars = 22;
+      const displayName = name.length > maxNameChars ? name.slice(0, maxNameChars - 1) + '\u2026' : name;
+
+      ctx.fillStyle = row.isBust ? '#DC2626' : row.isCheckout ? '#22C55E' : row.isTimeout ? '#94A3B8' : '#E2E8F0';
+      ctx.font = row.isCheckout ? `bold 44px sans-serif` : row.isTimeout ? `italic 40px sans-serif` : `500 44px sans-serif`;
+      ctx.fillText(displayName, CARD_X + 130, y + 60);
+
+      // Stat deduction (under name)
+      if (!row.isTimeout) {
+        ctx.fillStyle = row.isBust ? 'rgba(220, 38, 38, 0.8)' : '#94A3B8';
+        ctx.font = `32px monospace`;
+        ctx.fillText(`-${row.statValue}`, CARD_X + 130, y + 110);
+      }
+
+      // Remaining score (right, large)
+      ctx.textAlign = 'right';
+      ctx.font = `bold 72px monospace`;
+      if (row.isBust) {
+        ctx.fillStyle = '#DC2626';
+      } else if (row.isCheckout) {
+        ctx.fillStyle = '#22C55E';
+      } else {
+        ctx.fillStyle = '#E2E8F0';
+      }
+      const scoreLabel = row.isCheckout ? '0' : String(row.scoreAfter);
+      ctx.fillText(scoreLabel, CARD_X + CARD_W - 40, y + 100);
+
+      y += CARD_H;
     }
 
-    ctx.fillStyle = '#94A3B8';
-    ctx.font = '22px sans-serif';
-    const stats: string[] = [`${player1TurnCount.value} turns`];
-    if (bustCount.value > 0) stats.push(`${bustCount.value} bust${bustCount.value > 1 ? 's' : ''}`);
-    ctx.fillText(stats.join(' | '), 400, y + 20);
+    // --- Final result block ---
+    y += 80;
+
+    ctx.textAlign = 'center';
+    const hasCheckout = rows.some((r) => r.isCheckout);
+    if (hasCheckout) {
+      ctx.fillStyle = '#22C55E';
+      ctx.font = `bold 96px sans-serif`;
+      ctx.fillText('CHECKOUT', W / 2, y);
+      y += 30;
+    } else {
+      ctx.fillStyle = '#94A3B8';
+      ctx.font = `40px sans-serif`;
+      ctx.fillText('FINAL SCORE', W / 2, y);
+      ctx.fillStyle = '#E2E8F0';
+      ctx.font = `bold 110px monospace`;
+      ctx.fillText(String(props.finalScore), W / 2, y + 100);
+      y += 110;
+    }
+
+    // Turn count
+    y += 60;
+    ctx.fillStyle = '#E2E8F0';
+    ctx.font = `bold 48px sans-serif`;
+    const turnsLabel = player1TurnCount.value === 1 ? '1 try' : `${player1TurnCount.value} tries`;
+    ctx.fillText(turnsLabel, W / 2, y);
+
+    // Extra stats
+    const extra: string[] = [];
+    if (bustCount.value > 0) extra.push(`${bustCount.value} bust${bustCount.value > 1 ? 's' : ''}`);
+    if (timeoutCount.value > 0) extra.push(`${timeoutCount.value} timeout${timeoutCount.value > 1 ? 's' : ''}`);
+    if (extra.length > 0) {
+      y += 50;
+      ctx.fillStyle = '#94A3B8';
+      ctx.font = `36px sans-serif`;
+      ctx.fillText(extra.join('  \u00B7  '), W / 2, y);
+    }
   } else {
+    // Fallback: big score
     const scoreColor = props.isWinner ? '#22C55E' : '#DC2626';
     ctx.fillStyle = scoreColor;
-    ctx.font = 'bold 72px monospace';
-    ctx.fillText(String(props.finalScore), 400, chainY + 30);
+    ctx.font = `bold 180px monospace`;
+    ctx.textAlign = 'center';
+    ctx.fillText(String(props.finalScore), W / 2, SCORECARD_TOP + 180);
 
     ctx.fillStyle = '#94A3B8';
-    ctx.font = '22px sans-serif';
-    ctx.fillText(`in ${props.turnsTaken} turns`, 400, chainY + 70);
+    ctx.font = `48px sans-serif`;
+    ctx.fillText(`in ${props.turnsTaken} turns`, W / 2, SCORECARD_TOP + 260);
   }
 
-  // Footballers
-  const footballersY = 700;
+  // --- Footer ---
+  ctx.textAlign = 'center';
   ctx.fillStyle = '#94A3B8';
-  ctx.font = 'bold 16px sans-serif';
-  ctx.fillText('FOOTBALLERS NAMED', 400, footballersY);
-
-  ctx.fillStyle = '#E2E8F0';
-  ctx.font = '18px sans-serif';
-  const { shown, remaining } = displayedFootballers.value;
-  const namesText = shown.join(', ') + (remaining > 0 ? `, +${remaining} more` : '');
-  const nameLines = wrapText(ctx, namesText, 680);
-  let nameY = footballersY + 28;
-  for (const line of nameLines) {
-    ctx.fillText(line, 400, nameY);
-    nameY += 26;
-  }
-
-  ctx.fillStyle = '#94A3B8';
-  ctx.font = '18px sans-serif';
-  ctx.fillText('footy501.vercel.app', 400, 960);
+  ctx.font = `36px sans-serif`;
+  ctx.fillText('footy501.vercel.app', W / 2, H - 80);
 
   return canvas;
 }
 
-function wrapText(ctx: CanvasRenderingContext2D, text: string, maxWidth: number): readonly string[] {
-  // For arrow chains, split on arrows to find natural break points
-  const segments = text.split('\u2192');
-  if (segments.length <= 1) return [text];
-
-  const lines: string[] = [];
-  let currentLine = segments[0]!;
-
-  for (let i = 1; i < segments.length; i++) {
-    const testLine = `${currentLine}\u2192${segments[i]}`;
-    if (ctx.measureText(testLine).width > maxWidth && currentLine.length > 0) {
-      lines.push(currentLine);
-      currentLine = segments[i]!;
-    } else {
-      currentLine = testLine;
-    }
-  }
-  if (currentLine.length > 0) lines.push(currentLine);
-  return lines;
+function roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number): void {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.lineTo(x + w - r, y);
+  ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+  ctx.lineTo(x + w, y + h - r);
+  ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+  ctx.lineTo(x + r, y + h);
+  ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+  ctx.lineTo(x, y + r);
+  ctx.quadraticCurveTo(x, y, x + r, y);
+  ctx.closePath();
 }
 
 async function canvasToBlob(canvas: HTMLCanvasElement): Promise<Blob> {
@@ -362,9 +545,96 @@ async function handleShare(): Promise<void> {
 
 <template>
   <div class="flex flex-col items-center gap-4 w-full">
-    <!-- Share text preview -->
-    <div class="w-full max-w-sm bg-bg-elevated/50 border border-border rounded-lg p-4">
-      <pre class="text-xs text-text-muted font-mono whitespace-pre-wrap leading-relaxed text-center">{{ shareText }}</pre>
+    <!-- Visual scorecard -->
+    <div v-if="scorecardRows.length > 0" class="w-full max-w-sm">
+      <!-- Starting score -->
+      <div class="flex items-center justify-center gap-2 mb-2">
+        <span class="font-mono text-2xl font-bold text-text tabular-nums">{{ targetScore }}</span>
+      </div>
+
+      <!-- Turn rows -->
+      <div class="flex flex-col gap-1">
+        <div
+          v-for="(row, i) in scorecardRows"
+          :key="i"
+          class="flex items-center gap-2 px-3 py-1.5 rounded-md text-sm"
+          :class="{
+            'bg-danger/10 border border-danger/20': row.isBust,
+            'bg-success/10 border border-success/20': row.isCheckout,
+            'bg-bg-elevated/50 border border-transparent': !row.isBust && !row.isCheckout && !row.isTimeout,
+            'bg-warning/10 border border-warning/20': row.isTimeout,
+          }"
+        >
+          <!-- Arrow indicator -->
+          <span class="text-text-muted text-xs w-4 shrink-0 text-center">
+            <template v-if="row.isBust">&#x1F4A5;</template>
+            <template v-else-if="row.isCheckout">&#x2705;</template>
+            <template v-else-if="row.isTimeout">&#x23F0;</template>
+            <template v-else>&#x2192;</template>
+          </span>
+
+          <!-- Footballer name -->
+          <span
+            class="flex-1 truncate text-xs"
+            :class="{
+              'text-danger line-through': row.isBust,
+              'text-primary-light font-semibold': row.isCheckout,
+              'text-text-muted italic': row.isTimeout,
+              'text-text': !row.isBust && !row.isCheckout && !row.isTimeout,
+            }"
+          >
+            {{ row.isTimeout ? 'Timeout' : row.footballerName }}
+          </span>
+
+          <!-- Stat value -->
+          <span
+            v-if="!row.isTimeout"
+            class="font-mono text-xs tabular-nums shrink-0"
+            :class="row.isBust ? 'text-danger/70' : 'text-text-muted'"
+          >
+            -{{ row.statValue }}
+          </span>
+
+          <!-- Remaining score -->
+          <span
+            class="font-mono text-xs font-semibold tabular-nums w-8 text-right shrink-0"
+            :class="{
+              'text-danger': row.isBust,
+              'text-primary-light': row.isCheckout,
+              'text-text': !row.isBust && !row.isCheckout,
+            }"
+          >
+            {{ row.scoreAfter }}
+          </span>
+        </div>
+      </div>
+
+      <!-- Summary stats -->
+      <div class="flex items-center justify-center gap-3 mt-3 text-xs text-text-muted">
+        <span class="font-mono tabular-nums">{{ player1TurnCount }} turns</span>
+        <span v-if="bustCount > 0" class="text-danger font-mono tabular-nums">{{ bustCount }} bust{{ bustCount > 1 ? 's' : '' }}</span>
+        <span v-if="timeoutCount > 0" class="text-warning font-mono tabular-nums">{{ timeoutCount }} timeout{{ timeoutCount > 1 ? 's' : '' }}</span>
+      </div>
+    </div>
+
+    <!-- 2P leg summaries (when no turn-level data for scorecard) -->
+    <div v-else-if="legSummaries && legSummaries.length > 0" class="w-full max-w-sm bg-bg-elevated/50 border border-border rounded-lg p-4">
+      <div class="flex flex-col gap-2">
+        <div v-for="leg in legSummaries" :key="leg.legNumber" class="flex items-center justify-between text-sm">
+          <span class="text-text-muted">Leg {{ leg.legNumber }}</span>
+          <span class="text-text font-medium">
+            {{ leg.winnerName ?? '?' }} &#x2705;
+            <span class="text-text-muted text-xs">({{ leg.turnCount }} turns<template v-if="leg.bustCount > 0">, {{ leg.bustCount }} bust{{ leg.bustCount > 1 ? 's' : '' }}</template>)</span>
+          </span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Fallback: just the share text -->
+    <div v-else class="w-full max-w-sm bg-bg-elevated/50 border border-border rounded-lg p-4">
+      <p class="text-sm text-text text-center">
+        Score: <span class="font-mono font-bold tabular-nums">{{ finalScore }}</span> in {{ turnsTaken }} turns
+      </p>
     </div>
 
     <!-- Actions -->

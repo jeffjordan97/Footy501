@@ -1,8 +1,13 @@
 export const API_BASE = `${import.meta.env.VITE_API_URL ?? ''}/api`;
 
+function getAuthHeaders(): Record<string, string> {
+  const token = localStorage.getItem('footy501_token');
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const response = await fetch(`${API_BASE}${path}`, {
-    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    headers: { 'Content-Type': 'application/json', ...getAuthHeaders(), ...options?.headers },
     ...options,
   });
   if (!response.ok) {

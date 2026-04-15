@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, watch, onUnmounted } from 'vue';
 import AppButton from '@/components/ui/AppButton.vue';
-import ShareableResult from '@/components/game/ShareableResult.vue';
+import ShareableResult, { type ShareTurn } from '@/components/game/ShareableResult.vue';
 
 const props = withDefaults(
   defineProps<{
@@ -15,6 +15,9 @@ const props = withDefaults(
     opponentName?: string;
     opponentScore?: number;
     footballersNamed?: string[];
+    turns?: readonly ShareTurn[];
+    player1Name?: string;
+    player2Name?: string;
     isDaily?: boolean;
     date?: string;
   }>(),
@@ -171,7 +174,10 @@ onUnmounted(() => {
             :target-score="targetScore"
             :final-score="finalScore"
             :turns-taken="turnsTaken"
-            :is-winner="finalScore === 0"
+            :is-winner="finalScore >= -10 && finalScore <= 0"
+            :turns="turns"
+            :player1-name="player1Name"
+            :player2-name="player2Name"
             :opponent-name="opponentName"
             :opponent-score="opponentScore"
             :footballers-named="footballersNamed"

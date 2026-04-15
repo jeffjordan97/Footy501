@@ -67,9 +67,6 @@ const footballersNamed = computed(() =>
 );
 
 const finalScore = computed(() => {
-  if (winner.value === 0) return 0;
-  if (winner.value === 1) return 0;
-  // No checkout — return remaining score
   const lastLeg = state.value?.legs[state.value.legs.length - 1];
   return lastLeg?.players[0]?.score ?? 0;
 });
