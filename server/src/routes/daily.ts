@@ -10,14 +10,16 @@ import {
   getChallengeByDate,
 } from '../services/daily-service.js';
 import { getGame } from '../services/game-service.js';
-import { verifyToken } from '../services/auth-service.js';
+import { getUserById } from '../services/auth-service.js';
+import { authenticateRequest } from '../middleware/auth.js';
+import { db } from '../db/index.js';
+import { dailyChallengeAttempts } from '../db/schema/index.js';
+import { eq } from 'drizzle-orm';
 import type { MatchState } from '../lib/game-engine/types.js';
 
 const router: RouterType = Router();
 
 const StartSchema = z.object({
-  displayName: z.string().min(1).max(30),
-  userId: z.string().uuid().optional(),
   player2Name: z.string().min(1).max(30).optional(),
 });
 
@@ -36,31 +38,38 @@ router.get('/today', async (_req, res) => {
   }
 });
 
-// POST /api/daily/start - Start today's challenge
+// POST /api/daily/start - Start today's challenge (authenticated)
 router.post('/start', async (req, res) => {
-  const parsed = StartSchema.safeParse(req.body);
+  const userId = authenticateRequest(req, res);
+  if (!userId) return;
 
+  const parsed = StartSchema.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: 'Invalid request body', details: parsed.error.issues });
     return;
   }
 
   try {
-    const challenge = await getTodayChallenge();
-    const userId = parsed.data.userId ?? null;
+    // Load the authenticated user's canonical displayName (don't trust client)
+    const user = await getUserById(userId);
+    if (!user) {
+      res.status(404).json({ error: 'User not found' });
+      return;
+    }
 
+    const challenge = await getTodayChallenge();
     const player2Name = parsed.data.player2Name;
 
     // Check if already played
-    const status = await hasPlayedToday(challenge.id, userId, parsed.data.displayName);
+    const status = await hasPlayedToday(challenge.id, userId, user.displayName);
     if (status.played && status.attemptId && status.gameId) {
       // Allow resuming an existing attempt
-      const result = await startDailyAttempt(challenge.id, userId, parsed.data.displayName, player2Name);
+      const result = await startDailyAttempt(challenge.id, userId, user.displayName, player2Name);
       res.json(result);
       return;
     }
 
-    const result = await startDailyAttempt(challenge.id, userId, parsed.data.displayName, player2Name);
+    const result = await startDailyAttempt(challenge.id, userId, user.displayName, player2Name);
     res.status(201).json(result);
   } catch (error) {
     logError('Start daily attempt failed', error);
@@ -68,16 +77,37 @@ router.post('/start', async (req, res) => {
   }
 });
 
-// POST /api/daily/complete - Mark attempt as complete (score derived server-side)
+// POST /api/daily/complete - Mark attempt as complete (authenticated, score derived server-side)
 router.post('/complete', async (req, res) => {
-  const parsed = CompleteSchema.safeParse(req.body);
+  const userId = authenticateRequest(req, res);
+  if (!userId) return;
 
+  const parsed = CompleteSchema.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: 'Invalid request body', details: parsed.error.issues });
     return;
   }
 
   try {
+    // Check if a daily attempt exists for this game; if not, treat as no-op
+    // (e.g. the finished game was a regular local/solo game, not a daily).
+    const [attempt] = await db
+      .select({ userId: dailyChallengeAttempts.userId })
+      .from(dailyChallengeAttempts)
+      .where(eq(dailyChallengeAttempts.gameId, parsed.data.gameId))
+      .limit(1);
+
+    if (!attempt) {
+      res.json({ success: true, recorded: false });
+      return;
+    }
+
+    // Ownership check: only the attempt owner may complete it
+    if (attempt.userId !== userId) {
+      res.status(403).json({ error: 'Not your daily attempt' });
+      return;
+    }
+
     // Derive score from the authoritative game state
     const game = await getGame(parsed.data.gameId);
     if (!game) {
@@ -97,8 +127,8 @@ router.post('/complete', async (req, res) => {
     const finalScore = currentLeg?.players[0]?.score ?? 0;
     const turnsTaken = currentLeg?.turns.length ?? 0;
 
-    await completeDailyAttempt(parsed.data.gameId, finalScore, turnsTaken);
-    res.json({ success: true });
+    const updated = await completeDailyAttempt(parsed.data.gameId, finalScore, turnsTaken);
+    res.json({ success: true, recorded: updated });
   } catch (error) {
     logError('Complete daily attempt failed', error);
     res.status(500).json({ error: 'Failed to complete daily attempt' });
@@ -129,19 +159,20 @@ router.get('/leaderboard', async (req, res) => {
   }
 });
 
-// GET /api/daily/status - Check if user has played today
+// GET /api/daily/status - Check if the authenticated user has played today
 router.get('/status', async (req, res) => {
-  try {
-    const userId = typeof req.query.userId === 'string' ? req.query.userId : null;
-    const displayName = typeof req.query.displayName === 'string' ? req.query.displayName : null;
+  const userId = authenticateRequest(req, res);
+  if (!userId) return;
 
-    if (!userId && !displayName) {
-      res.status(400).json({ error: 'Either userId or displayName query parameter is required' });
+  try {
+    const user = await getUserById(userId);
+    if (!user) {
+      res.status(404).json({ error: 'User not found' });
       return;
     }
 
     const challenge = await getTodayChallenge();
-    const result = await hasPlayedToday(challenge.id, userId, displayName ?? '');
+    const result = await hasPlayedToday(challenge.id, userId, user.displayName);
     res.json(result);
   } catch (error) {
     logError('Check daily status failed', error);

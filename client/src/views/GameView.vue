@@ -13,6 +13,7 @@ import TurnHistory from '@/components/game/TurnHistory.vue';
 import CheckoutCelebration from '@/components/game/CheckoutCelebration.vue';
 import BustNotification from '@/components/game/BustNotification.vue';
 import AnswerReveal from '@/components/game/AnswerReveal.vue';
+import { completeDailyAttempt } from '@/lib/api';
 
 const route = useRoute();
 const router = useRouter();
@@ -238,6 +239,21 @@ watch(lastTurnResult, (result) => {
     setTimeout(() => {
       bustVisible.value = false;
     }, 3500);
+  }
+});
+
+// --- Daily challenge completion watcher ---
+// When the match finishes, notify the server. If the game is a daily attempt
+// the server records the score; otherwise it's a no-op.
+let dailyCompletionSent = false;
+watch(isMatchFinished, async (finished) => {
+  if (!finished || dailyCompletionSent || !gameId.value) return;
+  dailyCompletionSent = true;
+  try {
+    await completeDailyAttempt(gameId.value);
+  } catch (err) {
+    // Non-fatal — log and continue
+    console.error('[GameView] completeDailyAttempt failed:', err);
   }
 });
 

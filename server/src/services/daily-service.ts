@@ -213,13 +213,14 @@ export async function startDailyAttempt(
 
 /**
  * Mark a daily challenge attempt as complete with server-derived score.
- * Finds the attempt by gameId to prevent spoofing.
+ * Finds the attempt by gameId to prevent spoofing. Returns true if an
+ * attempt was updated, false if none matched (non-daily game — safe no-op).
  */
 export async function completeDailyAttempt(
   gameId: string,
   finalScore: number,
   turnsTaken: number,
-): Promise<void> {
+): Promise<boolean> {
   const [updated] = await db
     .update(dailyChallengeAttempts)
     .set({
@@ -230,9 +231,7 @@ export async function completeDailyAttempt(
     .where(eq(dailyChallengeAttempts.gameId, gameId))
     .returning({ id: dailyChallengeAttempts.id });
 
-  if (!updated) {
-    throw new Error('No attempt found for this game');
-  }
+  return updated !== undefined;
 }
 
 /**

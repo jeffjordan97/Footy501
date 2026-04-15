@@ -101,12 +101,16 @@ const startDaily = async () => {
   starting.value = true;
   errorMessage.value = null;
 
-  const displayName = authStore.user?.displayName ?? 'Guest';
-  const guestId = authStore.user ? undefined : localStorage.getItem('footy501_guest_id') ?? undefined;
+  // Auth is required — the server derives userId + displayName from JWT
+  if (!authStore.user) {
+    errorMessage.value = 'Please sign in to play the daily challenge.';
+    starting.value = false;
+    return;
+  }
 
   try {
     const p2 = playerCount.value === 2 ? (player2Name.value || 'Player 2') : undefined;
-    const { gameId, alreadyPlayed } = await startDailyAttempt(displayName, guestId, p2);
+    const { gameId, alreadyPlayed } = await startDailyAttempt(p2);
 
     if (alreadyPlayed) {
       hasPlayed.value = true;

@@ -115,10 +115,10 @@ export async function getDailyChallenge() {
   return request<{ challenge: DailyChallenge }>('/daily/today');
 }
 
-export async function startDailyAttempt(displayName: string, guestId?: string, player2Name?: string) {
+export async function startDailyAttempt(player2Name?: string) {
   return request<{ gameId: string; alreadyPlayed: boolean }>('/daily/start', {
     method: 'POST',
-    body: JSON.stringify({ displayName, guestId, player2Name }),
+    body: JSON.stringify({ player2Name }),
   });
 }
 
