@@ -31,21 +31,19 @@ const io = new Server(httpServer, {
   },
 });
 
-// Security headers
+// Security headers (CSP disabled — this is a JSON API, not an HTML server;
+// CSP should be set by the frontend's static hosting instead)
 app.use(helmet({
-  contentSecurityPolicy: {
-    directives: {
-      defaultSrc: ["'self'"],
-      connectSrc: ["'self'", origin, 'https://accounts.google.com'],
-      scriptSrc: ["'self'"],
-      styleSrc: ["'self'", "'unsafe-inline'"],
-      imgSrc: ["'self'", 'data:'],
-    },
-  },
+  contentSecurityPolicy: false,
   referrerPolicy: { policy: 'strict-origin-when-cross-origin' },
 }));
 
-app.use(cors({ origin, credentials: true }));
+app.use(cors({
+  origin,
+  credentials: true,
+  allowedHeaders: ['Content-Type', 'Authorization'],
+  methods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
+}));
 app.use(express.json());
 app.use(cookieParser());
 

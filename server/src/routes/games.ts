@@ -6,7 +6,6 @@ import {
   handleGameTimeout,
   getGame,
 } from '../services/game-service.js';
-import { authenticateRequest } from '../middleware/auth.js';
 
 const router: RouterType = Router();
 
@@ -33,11 +32,8 @@ const TimeoutSchema = z.object({
   playerIndex: z.union([z.literal(0), z.literal(1)]),
 });
 
-// POST /api/games (authenticated)
+// POST /api/games
 router.post('/', async (req, res) => {
-  const userId = authenticateRequest(req, res);
-  if (!userId) return;
-
   const parsed = CreateGameSchema.safeParse(req.body);
 
   if (!parsed.success) {
@@ -75,11 +71,8 @@ router.get('/:id', async (req, res) => {
   }
 });
 
-// POST /api/games/:id/answer (authenticated)
+// POST /api/games/:id/answer
 router.post('/:id/answer', async (req, res) => {
-  const userId = authenticateRequest(req, res);
-  if (!userId) return;
-
   const { id } = req.params;
   const parsed = SubmitAnswerSchema.safeParse(req.body);
 
@@ -103,11 +96,8 @@ router.post('/:id/answer', async (req, res) => {
   }
 });
 
-// POST /api/games/:id/timeout (authenticated)
+// POST /api/games/:id/timeout
 router.post('/:id/timeout', async (req, res) => {
-  const userId = authenticateRequest(req, res);
-  if (!userId) return;
-
   const { id } = req.params;
   const parsed = TimeoutSchema.safeParse(req.body);
 
