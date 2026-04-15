@@ -108,6 +108,11 @@ const footballersNamed = computed(() =>
     .map((t) => t.footballerName),
 );
 
+// Solo mode: player 2 is a phantom ("Target", "Practice Mode") — auto-skip their turns
+const SOLO_PLAYER2_NAMES = new Set(['Target', 'Practice Mode']);
+const isSoloMode = computed(() => SOLO_PLAYER2_NAMES.has(player2Name.value));
+const isPlayer2Turn = computed(() => activePlayerIndex.value === 1);
+
 const isPlayerInputDisabled = computed(() =>
   submitting.value
   || isLegFinished.value
@@ -115,11 +120,6 @@ const isPlayerInputDisabled = computed(() =>
   // In solo/daily mode, disable input when it's the phantom player 2's turn
   || (isSoloMode.value && isPlayer2Turn.value),
 );
-
-// Solo mode: player 2 is a phantom ("Target", "Practice Mode") — auto-skip their turns
-const SOLO_PLAYER2_NAMES = new Set(['Target', 'Practice Mode']);
-const isSoloMode = computed(() => SOLO_PLAYER2_NAMES.has(player2Name.value));
-const isPlayer2Turn = computed(() => activePlayerIndex.value === 1);
 
 // --- Near-miss checkout feedback ---
 
@@ -186,23 +186,33 @@ onUnmounted(() => {
 
 // --- Solo mode: auto-skip player 2 turns ---
 
+let autoSkipInFlight = false;
+
 watch(
-  [isPlayer2Turn, isSoloMode, loading],
-  ([p2Turn, solo, isLoading]) => {
-    if (p2Turn && solo && !isLoading && !submitting.value && !isLegFinished.value && !isMatchFinished.value) {
-      // Small delay so the UI doesn't flash
-      setTimeout(async () => {
-        if (activePlayerIndex.value !== 1) return; // Guard against race
-        submitting.value = true;
-        try {
-          await gameStore.handlePlayerTimeout();
-        } finally {
-          submitting.value = false;
-        }
-      }, 100);
+  [isPlayer2Turn, isSoloMode, loading, submitting],
+  async ([p2Turn, solo, isLoading, isSubmitting]) => {
+    if (
+      !p2Turn
+      || !solo
+      || isLoading
+      || isSubmitting
+      || autoSkipInFlight
+      || isLegFinished.value
+      || isMatchFinished.value
+    ) return;
+
+    autoSkipInFlight = true;
+    submitting.value = true;
+    try {
+      await gameStore.handlePlayerTimeout();
+    } catch (err) {
+      console.error('[GameView] auto-skip failed:', err);
+    } finally {
+      submitting.value = false;
+      autoSkipInFlight = false;
     }
   },
-  { immediate: true },
+  { immediate: true, flush: 'post' },
 );
 
 // --- Error watcher ---
