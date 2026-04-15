@@ -4,6 +4,7 @@ import {
   createGame,
   submitGameAnswer,
   handleGameTimeout,
+  skipGameTurn,
   getGame,
 } from '../services/game-service.js';
 
@@ -29,6 +30,10 @@ const SubmitAnswerSchema = z.object({
 });
 
 const TimeoutSchema = z.object({
+  playerIndex: z.union([z.literal(0), z.literal(1)]),
+});
+
+const SkipSchema = z.object({
   playerIndex: z.union([z.literal(0), z.literal(1)]),
 });
 
@@ -93,6 +98,26 @@ router.post('/:id/answer', async (req, res) => {
     const msg = error instanceof Error ? error.message : 'Failed to submit answer';
     console.error('Submit answer failed:', msg);
     res.status(500).json({ error: 'Failed to submit answer' });
+  }
+});
+
+// POST /api/games/:id/skip - advance turn without tracking timeout (solo mode)
+router.post('/:id/skip', async (req, res) => {
+  const { id } = req.params;
+  const parsed = SkipSchema.safeParse(req.body);
+
+  if (!parsed.success) {
+    res.status(400).json({ error: 'Invalid request body', details: parsed.error.issues });
+    return;
+  }
+
+  try {
+    const result = await skipGameTurn(id, parsed.data.playerIndex);
+    res.json(result);
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : 'Failed to skip turn';
+    console.error('Skip turn failed:', msg);
+    res.status(500).json({ error: 'Failed to skip turn' });
   }
 });
 

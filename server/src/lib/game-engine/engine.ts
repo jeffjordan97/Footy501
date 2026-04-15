@@ -271,6 +271,32 @@ export const handleTimeout = (
   return updateMatchLeg(state, updatedLeg);
 };
 
+/**
+ * Skip the current player's turn without tracking a timeout.
+ *
+ * Used for auto-advancing phantom players in solo/practice mode. Unlike
+ * `handleTimeout`, this does NOT increment `consecutiveTimeouts` and cannot
+ * trigger a match forfeit, so repeated auto-skips against a phantom player
+ * never end the match.
+ */
+export const skipTurn = (
+  state: MatchState,
+  playerIndex: 0 | 1,
+): MatchState => {
+  const leg = state.legs[state.currentLegIndex];
+
+  // Only skip if it's actually this player's turn
+  if (leg.currentPlayerIndex !== playerIndex) {
+    return state;
+  }
+
+  const updatedLeg = updateLeg(leg, {
+    currentPlayerIndex: switchPlayer(playerIndex),
+  });
+
+  return updateMatchLeg(state, updatedLeg);
+};
+
 // --- Leg Winner Determination ---
 
 export const determineLegWinner = (state: MatchState): MatchState => {

@@ -84,6 +84,13 @@ export async function submitTimeout(gameId: string, playerIndex: 0 | 1) {
   });
 }
 
+export async function submitSkipTurn(gameId: string, playerIndex: 0 | 1) {
+  return request<{ state: GameState }>(`/games/${gameId}/skip`, {
+    method: 'POST',
+    body: JSON.stringify({ playerIndex }),
+  });
+}
+
 // Daily challenge APIs
 
 export interface DailyChallenge {

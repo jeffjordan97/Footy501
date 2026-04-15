@@ -6,6 +6,7 @@ import {
   getPlayersForCategory,
   submitAnswer,
   submitTimeout,
+  submitSkipTurn,
   type GameState,
   type PlayerWithStat,
   type CreateGameRequest,
@@ -297,6 +298,27 @@ export const useGameStore = defineStore('game', () => {
     }
   }
 
+  /**
+   * Advance the current turn without recording it as a timeout.
+   * Used for auto-skipping phantom players in solo/practice mode so repeated
+   * auto-skips don't accumulate consecutive timeouts and forfeit the match.
+   */
+  async function skipPhantomTurn(): Promise<void> {
+    if (!gameId.value) throw new Error('No active game');
+    error.value = null;
+
+    try {
+      const response = await submitSkipTurn(
+        gameId.value,
+        activePlayerIndex.value,
+      );
+      state.value = response.state;
+    } catch (err) {
+      error.value = err instanceof Error ? err.message : 'Failed to skip turn';
+      throw err;
+    }
+  }
+
   // --- WebSocket Actions ---
 
   /**
@@ -458,6 +480,7 @@ export const useGameStore = defineStore('game', () => {
     loadCategoryPlayers,
     submitPlayerAnswer,
     handlePlayerTimeout,
+    skipPhantomTurn,
     connectToGame,
     disconnectFromGame,
     reset,

@@ -1,7 +1,7 @@
 import { db } from '../db/index.js';
 import { games, gameTurns } from '../db/schema/index.js';
 import { eq } from 'drizzle-orm';
-import { createMatch, submitAnswer, handleTimeout, getBustMessage } from '../lib/game-engine/index.js';
+import { createMatch, submitAnswer, handleTimeout, skipTurn, getBustMessage } from '../lib/game-engine/index.js';
 import type {
   MatchConfig,
   MatchState,
@@ -206,6 +206,30 @@ export async function handleGameTimeout(
     result: 'TIMEOUT',
     scoreAfter: lastTurn?.scoreAfter ?? 0,
   });
+
+  return { state: serializeState(updatedState) as unknown as MatchState };
+}
+
+/**
+ * Skip the current player's turn (solo/practice mode auto-advance).
+ *
+ * Does NOT record a turn or increment timeout counters — just switches
+ * `currentPlayerIndex` to the other player. Used when the phantom player
+ * in solo mode needs to pass control back to the real player.
+ */
+export async function skipGameTurn(
+  gameId: string,
+  playerIndex: 0 | 1,
+): Promise<{ readonly state: MatchState }> {
+  const game = await loadGameOrThrow(gameId);
+  const currentState = game.state as MatchState;
+
+  const updatedState = skipTurn(currentState, playerIndex);
+
+  await db
+    .update(games)
+    .set({ state: updatedState })
+    .where(eq(games.id, gameId));
 
   return { state: serializeState(updatedState) as unknown as MatchState };
 }

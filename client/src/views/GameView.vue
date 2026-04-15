@@ -204,7 +204,7 @@ watch(
     autoSkipInFlight = true;
     submitting.value = true;
     try {
-      await gameStore.handlePlayerTimeout();
+      await gameStore.skipPhantomTurn();
     } catch (err) {
       console.error('[GameView] auto-skip failed:', err);
     } finally {
