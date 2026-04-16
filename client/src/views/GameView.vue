@@ -13,6 +13,7 @@ import TurnHistory from '@/components/game/TurnHistory.vue';
 import CheckoutCelebration from '@/components/game/CheckoutCelebration.vue';
 import BustNotification from '@/components/game/BustNotification.vue';
 import AnswerReveal from '@/components/game/AnswerReveal.vue';
+import SeasonHints from '@/components/game/SeasonHints.vue';
 import { completeDailyAttempt } from '@/lib/api';
 
 const route = useRoute();
@@ -479,6 +480,16 @@ const handleGoHome = () => {
         </svg>
         <span class="text-sm text-text-muted">Submitting...</span>
       </div>
+
+      <!-- Season hints -->
+      <SeasonHints
+        :league="categoryLeague"
+        :team-id="categoryTeamId"
+        :stat-type="categoryStatType"
+        :used-player-ids="usedPlayerIds"
+        :disabled="isPlayerInputDisabled"
+        @select="handlePlayerSelect"
+      />
 
       <!-- Turn history (collapsible) -->
       <AppCard class="p-4">

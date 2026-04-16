@@ -77,10 +77,29 @@ interface AggregatedStat {
   readonly playerId: string;
   readonly clubId: string;
   readonly competitionId: string;
+  readonly season: string;
   readonly appearances: number;
   readonly goals: number;
   readonly assists: number;
   readonly cleanSheets: number;
+}
+
+/**
+ * Derive the football season string from a match date.
+ * Football seasons span roughly Aug-May. Matches in Jan-Jul belong to
+ * the season that started the previous year. Matches in Aug-Dec belong
+ * to the season starting that year.
+ * e.g. "2023-01-15" → "2022/23", "2023-09-01" → "2023/24"
+ */
+function dateToSeason(dateStr: string): string {
+  const [yearStr, monthStr] = dateStr.split("-");
+  const year = parseInt(yearStr, 10);
+  const month = parseInt(monthStr, 10);
+
+  // Aug (8) onwards = new season starts this year
+  const startYear = month >= 8 ? year : year - 1;
+  const endYear = startYear + 1;
+  return `${startYear}/${String(endYear).slice(-2)}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -127,14 +146,14 @@ async function main(): Promise<void> {
   const statsMap = new Map<string, AggregatedStat>();
 
   for (const row of filteredAppearances) {
-    const key = `${row.player_id}|${row.player_club_id}|${row.competition_id}`;
+    const season = row.date ? dateToSeason(row.date) : 'ALL';
+    const key = `${row.player_id}|${row.player_club_id}|${row.competition_id}|${season}`;
     const existing = statsMap.get(key);
 
     const goals = parseInt(row.goals, 10) || 0;
     const assists = parseInt(row.assists, 10) || 0;
 
     if (existing) {
-      // Create updated record (immutable style)
       statsMap.set(key, {
         ...existing,
         appearances: existing.appearances + 1,
@@ -146,6 +165,7 @@ async function main(): Promise<void> {
         playerId: row.player_id,
         clubId: row.player_club_id,
         competitionId: row.competition_id,
+        season,
         appearances: 1,
         goals,
         assists,
@@ -284,7 +304,7 @@ async function main(): Promise<void> {
       return {
         playerId: dbPlayerId,
         teamId: dbTeamId,
-        season: "ALL",
+        season: stat.season,
         statType: "APPEARANCES_AND_GOALS" as const,
         appearances: stat.appearances,
         goals: stat.goals,

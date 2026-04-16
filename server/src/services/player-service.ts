@@ -186,6 +186,95 @@ export async function getPlayerById(
   return results[0] ?? null;
 }
 
+// ---------------------------------------------------------------------------
+// Season Hints
+// ---------------------------------------------------------------------------
+
+export interface SeasonInfo {
+  readonly season: string;
+  readonly playerCount: number;
+}
+
+export interface SeasonPlayer {
+  readonly id: string;
+  readonly name: string;
+  readonly position: string | null;
+  readonly statValue: number;
+}
+
+/**
+ * Get distinct seasons that have player data for a given league (+ optional team).
+ * Returns seasons sorted newest-first, with 'ALL' (2012-Present) at the top.
+ */
+export async function getDistinctSeasons(
+  league: string,
+  teamId?: string,
+): Promise<readonly SeasonInfo[]> {
+  const conditions = [eq(teams.league, league)];
+  if (teamId) {
+    conditions.push(eq(playerStats.teamId, teamId));
+  }
+
+  const results = await db
+    .select({
+      season: playerStats.season,
+      playerCount: sql<number>`count(distinct ${playerStats.playerId})`,
+    })
+    .from(playerStats)
+    .innerJoin(teams, eq(playerStats.teamId, teams.id))
+    .where(and(...conditions))
+    .groupBy(playerStats.season);
+
+  return [...results]
+    .map((r) => ({ season: r.season, playerCount: Number(r.playerCount) }))
+    .sort((a, b) => {
+      if (a.season === 'ALL') return -1;
+      if (b.season === 'ALL') return 1;
+      return b.season.localeCompare(a.season);
+    });
+}
+
+/**
+ * Get players for a specific season within a league (+ optional team/statType).
+ * Returns a minimal response: id, name, position, stat value — ordered by stat desc.
+ */
+export async function getPlayersForSeason(
+  season: string,
+  league: string,
+  teamId?: string,
+  statType?: string,
+): Promise<readonly SeasonPlayer[]> {
+  const statExpression = buildStatExpression(statType);
+
+  const conditions = [
+    eq(teams.league, league),
+    eq(playerStats.season, season),
+  ];
+
+  if (teamId) {
+    conditions.push(eq(playerStats.teamId, teamId));
+  }
+
+  const results = await db
+    .select({
+      id: players.id,
+      name: players.name,
+      position: players.position,
+      statValue: statExpression,
+    })
+    .from(playerStats)
+    .innerJoin(players, eq(playerStats.playerId, players.id))
+    .innerJoin(teams, eq(playerStats.teamId, teams.id))
+    .where(and(...conditions))
+    .groupBy(players.id, players.name, players.position)
+    .orderBy(sql`${statExpression} desc`);
+
+  return results.map((row) => ({
+    ...row,
+    statValue: Number(row.statValue),
+  }));
+}
+
 /**
  * Build a SQL expression for the stat value based on statType.
  */

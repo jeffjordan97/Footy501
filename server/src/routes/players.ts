@@ -1,5 +1,5 @@
 import { Router, type Router as RouterType } from 'express';
-import { searchPlayers, searchPlayersInCategory, getPlayersForCategory } from '../services/player-service.js';
+import { searchPlayers, searchPlayersInCategory, getPlayersForCategory, getDistinctSeasons, getPlayersForSeason } from '../services/player-service.js';
 import { logError } from '../lib/log-error.js';
 
 const router: RouterType = Router();
@@ -83,6 +83,46 @@ router.get('/category', async (req, res) => {
   } catch (error) {
     logError('Get players for category failed', error);
     res.status(500).json({ error: 'Failed to get players for category' });
+  }
+});
+
+// GET /api/players/seasons?league=Premier+League&teamId=xxx
+router.get('/seasons', async (req, res) => {
+  const league = req.query.league as string | undefined;
+  const teamId = req.query.teamId as string | undefined;
+
+  if (!league) {
+    res.status(400).json({ error: 'League is required' });
+    return;
+  }
+
+  try {
+    const seasons = await getDistinctSeasons(league, teamId);
+    res.json({ seasons });
+  } catch (error) {
+    logError('Get distinct seasons failed', error);
+    res.status(500).json({ error: 'Failed to get seasons' });
+  }
+});
+
+// GET /api/players/season-players?season=2003/04&league=Premier+League&statType=APPEARANCES_AND_GOALS
+router.get('/season-players', async (req, res) => {
+  const season = req.query.season as string | undefined;
+  const league = req.query.league as string | undefined;
+  const teamId = req.query.teamId as string | undefined;
+  const statType = req.query.statType as string | undefined;
+
+  if (!season || !league) {
+    res.status(400).json({ error: 'Season and league are required' });
+    return;
+  }
+
+  try {
+    const players = await getPlayersForSeason(season, league, teamId, statType);
+    res.json({ players });
+  } catch (error) {
+    logError('Get players for season failed', error);
+    res.status(500).json({ error: 'Failed to get players for season' });
   }
 });
 

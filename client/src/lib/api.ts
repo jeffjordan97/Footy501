@@ -30,6 +30,37 @@ export async function getPlayersForCategory(
   return request<{ players: PlayerWithStat[] }>(`/players/category?${params}`);
 }
 
+// Season hints
+export interface SeasonInfo {
+  readonly season: string;
+  readonly playerCount: number;
+}
+
+export interface SeasonPlayer {
+  readonly id: string;
+  readonly name: string;
+  readonly position: string | null;
+  readonly statValue: number;
+}
+
+export async function getSeasons(league: string, teamId?: string) {
+  const params = new URLSearchParams({ league });
+  if (teamId) params.set('teamId', teamId);
+  return request<{ seasons: SeasonInfo[] }>(`/players/seasons?${params}`);
+}
+
+export async function getSeasonPlayers(
+  season: string,
+  league: string,
+  teamId?: string,
+  statType?: string,
+) {
+  const params = new URLSearchParams({ season, league });
+  if (teamId) params.set('teamId', teamId);
+  if (statType) params.set('statType', statType);
+  return request<{ players: SeasonPlayer[] }>(`/players/season-players?${params}`);
+}
+
 export async function searchPlayersInCategory(
   query: string,
   league: string,
